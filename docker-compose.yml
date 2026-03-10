@@ -1,0 +1,114 @@
+version: "3.9"
+
+services:
+  staff:
+    build: ./staff
+    container_name: staff-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  manager:
+    build: ./manager
+    container_name: manager-service
+    ports:
+      - "8001:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  customer:
+    build: ./customer
+    container_name: customer-service
+    ports:
+      - "8002:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - CART_SERVICE_URL=http://cart:8000
+
+  catalog:
+    build: ./catalog
+    container_name: catalog-service
+    ports:
+      - "8003:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  book:
+    build: ./book
+    container_name: book-service
+    ports:
+      - "8004:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  cart:
+    build: ./cart
+    container_name: cart-service
+    ports:
+      - "8005:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - BOOK_SERVICE_URL=http://book:8000
+
+  order:
+    build: ./order
+    container_name: order-service
+    ports:
+      - "8006:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - PAY_SERVICE_URL=http://pay:8000
+      - SHIP_SERVICE_URL=http://ship:8000
+
+  ship:
+    build: ./ship
+    container_name: ship-service
+    ports:
+      - "8007:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  pay:
+    build: ./pay
+    container_name: pay-service
+    ports:
+      - "8008:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+
+  comment-rate:
+    build: ./comment-rate
+    container_name: comment-rate-service
+    ports:
+      - "8009:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - ORDER_SERVICE_URL=http://order:8000
+
+  recommender-ai:
+    build: ./recommender-ai
+    container_name: recommender-ai-service
+    ports:
+      - "8010:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - ORDER_SERVICE_URL=http://order:8000
+      - COMMENT_RATE_SERVICE_URL=http://comment-rate:8000
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway-service
+    ports:
+      - "8011:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - CATALOG_SERVICE_URL=http://catalog:8000
+      - BOOK_SERVICE_URL=http://book:8000
+      - RECOMMENDER_SERVICE_URL=http://recommender-ai:8000
+      - COMMENT_RATE_SERVICE_URL=http://comment-rate:8000
+      - CUSTOMER_SERVICE_URL=http://customer:8000
+      - CART_SERVICE_URL=http://cart:8000
+      - ORDER_SERVICE_URL=http://order:8000
+      - PAY_SERVICE_URL=http://pay:8000
+      - SHIP_SERVICE_URL=http://ship:8000

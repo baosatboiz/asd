@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book Reviews</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1c2a2a;
+      --muted: #5f6f73;
+      --brand: #0f766e;
+      --line: #d8e1df;
+      --shadow: 0 18px 40px rgba(17, 30, 30, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      background: radial-gradient(40rem 22rem at 115% -10%, #e3f2ef 0%, transparent 58%), var(--bg);
+      color: var(--ink);
+      padding: 24px;
+    }
+    .shell { max-width: 980px; margin: 0 auto; }
+    nav {
+      margin-bottom: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    nav a {
+      text-decoration: none;
+      color: var(--ink);
+      font-weight: 700;
+      border-radius: 9px;
+      padding: 7px 11px;
+    }
+    nav a:hover { background: #ecf6f4; color: var(--brand); }
+    .identity { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+    .identity select { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+    .card {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    h1 { margin: 0 0 8px; font-family: "Space Grotesk", sans-serif; }
+    .review { border-bottom: 1px solid #e7eceb; padding: 10px 0; }
+    .review:last-child { border-bottom: none; }
+    .meta { color: var(--muted); }
+    .error { color: #991b1b; background: #fee2e2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px; }
+    .rating { color: #92400e; font-weight: 800; }
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .identity { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+  <nav>
+    <a href="/">Catalog</a>
+    <a href="/cart/">My Cart</a>
+    {% if current_identity.role == "staff" %}
+      <a href="/staff/dashboard/">Dashboard</a>
+    {% else %}
+      <a href="/dashboard/">Dashboard</a>
+    {% endif %}
+    <form method="post" action="/switch-identity/" class="identity">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="identity_key">Switch User</label>
+      <select id="identity_key" name="identity_key" onchange="this.form.submit()">
+        {% for opt in identity_options %}
+          <option value="{{ opt.key }}" {% if current_identity.key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <span>Active: <strong>{{ current_identity.label }}</strong></span>
+  </nav>
+
+  <div class="card">
+    <h1>{{ book.title }}</h1>
+    <p class="meta">Author: {{ book.author }}</p>
+    <p class="meta">Price: ${{ book.price }}</p>
+    {% if book.avg_rating %}
+      <p class="rating">Average rating {{ book.avg_rating }}/5 ({{ book.rating_count }} reviews)</p>
+    {% else %}
+      <p class="meta">Average rating: No ratings yet</p>
+    {% endif %}
+
+    <h2>Reviews</h2>
+    {% if comments %}
+      {% for review in comments %}
+        <div class="review">
+          <div><strong>Customer {{ review.customer_id }}</strong> rated {{ review.rating }}/5</div>
+          <div>{{ review.comment }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p>No reviews for this book yet.</p>
+    {% endif %}
+  </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Courier New', monospace;
+    font-size: 13.5px;
+    padding: 32px 40px;
+    margin: 0;
+    line-height: 1.6;
+  }
+  h1 {
+    color: #e3b341;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 10px;
+  }
+  .section {
+    margin-bottom: 36px;
+  }
+  .section-title {
+    color: #58a6ff;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding: 4px 10px;
+    border-left: 3px solid #58a6ff;
+    background: #161b22;
+  }
+  pre {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.65;
+    margin: 0;
+    white-space: pre;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 32px 0;
+  }
+</style>
+</head>
+<body>
+<h1>Bookstore Microservice — Data Flow per Service</h1>
+
+<div class="section">
+  <div class="section-title">01 · Staff Service :8000</div>
+<pre>
+Client / Gateway
+      |
+      v
+StaffViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /staff/        ———> list all staff
+      +——> POST   /staff/        ———> create staff
+      +——> GET    /staff/{id}/   ———> retrieve staff
+      +——> PATCH  /staff/{id}/   ———> update staff
+      +——> DELETE /staff/{id}/   ———> delete staff
+      |
+      v
+StaffSerializer
+      |
+      v
+Staff DB (SQLite)
+      full_name, email (unique), role, is_active, created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">02 · Manager Service :8001</div>
+<pre>
+Client / Gateway
+      |
+      v
+ManagerViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /managers/       ———> list all managers
+      +——> POST   /managers/       ———> create manager
+      +——> GET    /managers/{id}/  ———> retrieve manager
+      +——> PATCH  /managers/{id}/  ———> update manager
+      +——> DELETE /managers/{id}/  ———> delete manager
+      |
+      v
+ManagerSerializer
+      |
+      v
+Manager DB (SQLite)
+      full_name, email (unique), department, created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">03 · Customer Service :8002</div>
+<pre>
+Client / Gateway
+      |
+      v
+CustomerViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /customers/       ———> list all customers
+      +——> GET    /customers/{id}/  ———> retrieve customer
+      +——> PATCH  /customers/{id}/  ———> update customer
+      +——> DELETE /customers/{id}/  ———> delete customer
+      |
+      +——> POST   /customers/       ———> create customer
+      |               |
+      |               +——————————————————————> Customer DB  (write — save customer first)
+      |               |
+      |               +——> POST /carts/ ——————> cart-service:8005
+      |                         |
+      |                         +——> Cart DB   (new cart created)
+      |                         +——> return cart_id
+      |                         |
+      |               +---------+
+      |               |
+      |               +——> update Customer.cart_id = returned cart_id
+      |               +——> if cart-service fails: customer saved with warning, cart_id = null
+      |
+      v
+CustomerSerializer
+      |
+      v
+Customer DB (SQLite)
+      name, email, address, cart_id (nullable), created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">04 · Catalog Service :8003</div>
+<pre>
+Client / Gateway
+      |
+      v
+CategoryViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /categories/       ———> list all categories
+      +——> POST   /categories/       ———> create category
+      +——> GET    /categories/{id}/  ———> retrieve category
+      +——> PATCH  /categories/{id}/  ———> update category
+      +——> DELETE /categories/{id}/  ———> delete category
+      |
+      v
+CategorySerializer
+      |
+      v
+Category DB (SQLite)
+      name (unique), description
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">05 · Book Service :8004</div>
+<pre>
+Client / Gateway / cart-service
+      |
+      v
+BookViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /books/       ———> list all books
+      +——> POST   /books/       ———> create book
+      +——> GET    /books/{id}/  ———> retrieve book     &lt;—— also called by cart-service to validate
+      +——> PATCH  /books/{id}/  ———> update book
+      +——> DELETE /books/{id}/  ———> delete book
+      |
+      v
+BookSerializer
+      |
+      v
+Book DB (SQLite)
+      title, author, isbn (unique), price, stock, category_id, created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">06 · Cart Service :8005</div>
+<pre>
+Client / Gateway / customer-service
+      |
+      v
+CartViewSet  (DRF ModelViewSet + custom actions)
+      |
+      +——> GET    /carts/                  ———> list carts
+      +——> POST   /carts/                  ———> create cart          &lt;—— called by customer-service on register
+      +——> GET    /carts/{id}/             ———> retrieve cart
+      +——> PATCH  /carts/{id}/             ———> update cart
+      +——> DELETE /carts/{id}/             ———> delete cart
+      |
+      +——> POST   /carts/{id}/add-item/    ———> add or increment item
+      |               |
+      |               +——> GET /books/{id}/ ——> book-service:8004    (validate book exists)
+      |               |         |
+      |               |         +——> book not found: return 404
+      |               |         +——> book found: continue
+      |               |
+      |               +——> CartItem exists? ——> YES: quantity++
+      |               +——————————————————————> NO:  create CartItem
+      |
+      +——> POST   /carts/{id}/clear-items/ ———> delete all CartItems  &lt;—— called by gateway after checkout
+      |
+      v
+CartSerializer + CartItemSerializer
+      |
+      v
+Cart DB (SQLite)          CartItem DB (SQLite)
+  customer_id (unique)        cart (FK → Cart)
+  is_active                   book_id
+  created_at                  quantity
+                              unique_together (cart, book_id)
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">07 · Order Service :8006</div>
+<pre>
+Client / Gateway
+      |
+      v
+OrderViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /orders/       ———> list orders    &lt;—— called by comment-rate, recommender-ai, gateway
+      +——> GET    /orders/{id}/  ———> retrieve order
+      +——> PATCH  /orders/{id}/  ———> update order   &lt;—— called by gateway staff mark-shipped
+      +——> DELETE /orders/{id}/  ———> delete order
+      |
+      +——> POST   /orders/       ———> create order
+      |               |
+      |               +——> Order DB (write — status: "pending")
+      |               |
+      |               +——> POST /payments/ ——> pay-service:8008
+      |               |         |
+      |               |         +——> Payment DB (write — status: "paid")
+      |               |         +——> return payment status
+      |               |
+      |               +——> POST /shipments/ ——> ship-service:8007
+      |               |         |
+      |               |         +——> Shipment DB (write — status: "processing")
+      |               |         +——> return shipment status
+      |               |
+      |               +——> payment success? ——> update Order.status = "paid"
+      |               +——> return order + payment_status + shipping_status
+      |               |
+      |               NOTE: shipping_address encodes book IDs as  |books:1,2,3
+      |
+      v
+OrderSerializer
+      |
+      v
+Order DB (SQLite)
+      customer_id, total_price, status (pending|paid|shipped|completed)
+      shipping_address  ⚠ contains |books:1,2,3 suffix
+      created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">08 · Pay Service :8008</div>
+<pre>
+order-service / Gateway
+      |
+      v
+PaymentViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /payments/       ———> list payments    &lt;—— called by gateway (dashboard, success page)
+      +——> POST   /payments/       ———> create payment   &lt;—— called by order-service on checkout
+      +——> GET    /payments/{id}/  ———> retrieve payment
+      +——> PATCH  /payments/{id}/  ———> update payment
+      +——> DELETE /payments/{id}/  ———> delete payment
+      |
+      v
+PaymentSerializer
+      |
+      v
+Payment DB (SQLite)
+      order_id (unique), amount, status (pending|paid|failed), paid_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">09 · Ship Service :8007</div>
+<pre>
+order-service / Gateway
+      |
+      v
+ShipmentViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /shipments/       ———> list shipments    &lt;—— called by gateway (dashboard, success page)
+      +——> POST   /shipments/       ———> create shipment   &lt;—— called by order-service on checkout
+      +——> GET    /shipments/{id}/  ———> retrieve shipment
+      +——> PATCH  /shipments/{id}/  ———> update shipment   &lt;—— called by gateway staff mark-shipped
+      +——> DELETE /shipments/{id}/  ———> delete shipment
+      |
+      v
+ShipmentSerializer
+      |
+      v
+Shipment DB (SQLite)
+      order_id, customer_id, address, status (processing|shipped|delivered|failed), created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">10 · Comment-Rate Service :8009</div>
+<pre>
+Client / Gateway
+      |
+      v
+CommentRateViewSet  (DRF ModelViewSet)
+      |
+      +——> GET    /comments/        ———> list reviews     &lt;—— called by gateway (home, book detail)
+      +——> GET    /comments-rates/  ———> same viewset, same data, alternate route
+      +——> GET    /comments/{id}/   ———> retrieve review
+      +——> PATCH  /comments/{id}/   ———> update review
+      +——> DELETE /comments/{id}/   ———> delete review
+      |
+      +——> POST   /comments/        ———> create review
+      |               |
+      |               +——> GET /orders/ ——> order-service:8006
+      |               |         |
+      |               |         +——> fetch all orders for this customer
+      |               |         +——> extract book IDs from order.shipping_address  |books:1,2,3
+      |               |              (fallback: parse ordered_book_ids field if present)
+      |               |
+      |               +——> book_id in purchased books?
+      |               |         |
+      |               |         +——> NO:  return 403 Forbidden
+      |               |         +——> YES: save CommentRate to DB
+      |
+      v
+CommentRateSerializer
+      |
+      v
+CommentRate DB (SQLite)
+      book_id, customer_id, comment, rating, created_at
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">11 · Recommender-AI Service :8010</div>
+<pre>
+Client / Gateway
+      |
+      v
+RecommendationViewSet  (custom list())
+      |
+      +——> GET /recommendations/   ———> dynamic scored list  (no precomputed data)
+      |               |
+      |               +——> GET /orders/ ——————————> order-service:8006
+      |               |         |
+      |               |         +——> fetch all orders
+      |               |         +——> parse purchased book IDs from shipping_address  |books:...
+      |               |         +——> count how many times each book was ordered
+      |               |
+      |               +——> GET /comments-rates/ ——> comment-rate:8009
+      |               |         |
+      |               |         +——> fetch all ratings
+      |               |         +——> filter: rating > 4 only
+      |               |         +——> compute avg high rating per book
+      |               |
+      |               +——> score each book:
+      |               |         score = (order_count × 10) + (avg_high_rating × 20)
+      |               |
+      |               +——> read X-Actor-Id header (current user)
+      |               +——> remove books already ordered by this user  (personalization)
+      |               +——> return top 20 with explanation text
+      |
+      v
+Recommendation DB (SQLite)
+      (stored model exists but list() is fully dynamic — no DB writes during recommendations)
+</pre>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">12 · API Gateway :8011</div>
+<pre>
+Browser / Client
+      |
+      v
+Django Views  (template renderer + HTTP orchestrator)
+      |
+      +——> session: X-Actor-Role, X-Actor-Id  ——> forwarded as headers to all upstream calls
+      |
+      +——> GET  /                      ———> home page
+      |              +——> catalog-service:8003   GET /categories/
+      |              +——> book-service:8004       GET /books/
+      |              +——> comment-rate:8009       GET /comments-rates/
+      |              +——> recommender-ai:8010     GET /recommendations/
+      |              +——> render index.html
+      |
+      +——> GET  /books/{id}/           ———> book detail page
+      |              +——> book-service:8004       GET /books/{id}/
+      |              +——> comment-rate:8009       GET /comments-rates/?book={id}
+      |              +——> render book_detail.html
+      |
+      +——> POST /add-to-cart/          ———> add item to cart
+      |              +——> cart-service:8005       POST /carts/{id}/add-item/
+      |
+      +——> GET  /checkout/             ———> checkout page
+      |              +——> cart-service:8005       GET /carts/{id}/
+      |              +——> book-service:8004       GET /books/{id}/ ×N  (price lookup)
+      |              +——> order-service:8006      POST /orders/
+      |              +——> cart-service:8005       POST /carts/{id}/clear-items/
+      |              +——> redirect /success/
+      |
+      +——> GET  /success/              ———> order success page
+      |              +——> order-service:8006      GET /orders/
+      |              +——> pay-service:8008         GET /payments/
+      |              +——> ship-service:8007        GET /shipments/
+      |              +——> book-service:8004        GET /books/{id}/
+      |              +——> render success.html
+      |
+      +——> POST /submit-review/        ———> submit review
+      |              +——> comment-rate:8009       POST /comments/
+      |
+      +——> GET  /dashboard/            ———> manager dashboard
+      |              +——> order-service:8006      GET /orders/
+      |              +——> book-service:8004        GET /books/
+      |              +——> customer-service:8002   GET /customers/
+      |              +——> staff-service:8000       GET /staff/    ⚠ bug: calls /staffs/ → count = 0
+      |              +——> pay-service:8008         GET /payments/
+      |              +——> catalog-service:8003    GET /categories/
+      |              +——> render dashboard.html
+      |
+      +——> GET  /staff/dashboard/      ———> staff dashboard
+      |              +——> order-service:8006      GET /orders/ (pending)
+      |              +——> book-service:8004        GET /books/  (low stock)
+      |              +——> render staff_dashboard.html
+      |
+      +——> GET  /staff/manage-books/   ———> book list for staff
+      |              +——> book-service:8004        GET /books/
+      |              +——> catalog-service:8003    GET /categories/
+      |              +——> render manage_books.html
+      |
+      +——> POST /staff/add-book/       ———> create book
+      |              +——> book-service:8004        POST /books/
+      |
+      +——> POST /staff/edit-book/{id}/ ———> update book
+      |              +——> book-service:8004        PATCH /books/{id}/
+      |
+      +——> POST /staff/delete-book/{id}/ ———> delete book
+      |              +——> book-service:8004        DELETE /books/{id}/
+      |
+      +——> POST /staff/mark-shipped/   ———> mark order shipped
+      |              +——> ship-service:8007        PATCH /shipments/{id}/  (status="shipped")
+      |              +——> order-service:8006       PATCH /orders/{id}/     (status="shipped")
+      |
+      +——> POST /switch-identity/      ———> swap session role (dev/demo only)
+      |
+      +——> GET  /aggregate/            ———> raw JSON aggregate
+                     +——> order-service:8006      GET /orders/
+                     +——> book-service:8004        GET /books/
+                     +——> customer-service:8002   GET /customers/
+                     +——> pay-service:8008         GET /payments/
+                     +——> ship-service:8007        GET /shipments/
+</pre>
+</div>
+
+</body>
+</html>

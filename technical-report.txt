@@ -1,0 +1,599 @@
+BOOKSTORE MICROSERVICE SYSTEM
+TECHNICAL REPORT
+Date: March 11, 2026
+
+====================================================================
+1. EXECUTIVE SUMMARY
+====================================================================
+
+This report describes the architecture, implementation, data design, and
+runtime behavior of the Bookstore Microservice System contained in this
+project. The system is built as a distributed web application using Django,
+Django REST Framework, Docker Compose, and SQLite. Instead of implementing
+all bookstore features inside one monolithic application, the project splits
+responsibility across multiple services. Each service owns a specific domain,
+runs in its own container, and stores data in its own database.
+
+The system includes twelve services: staff, manager, customer, catalog,
+book, cart, order, ship, pay, comment-rate, recommender-ai, and api-gateway.
+These services communicate through synchronous HTTP requests using the Python
+requests library. The API Gateway acts as the user-facing entry point and
+coordinates data from backend services to render HTML pages for customers,
+staff, and managers.
+
+From an architectural perspective, this project demonstrates several core
+microservice principles:
+
+- separation of business domains into small deployable services
+- database-per-service isolation
+- HTTP-based inter-service communication
+- independent API contracts using Django REST Framework routers
+- orchestration logic concentrated in a gateway and selected business services
+- clear decomposition of simple CRUD services from workflow services
+
+At the same time, the system also shows the practical tradeoffs of a simple
+academic microservice design. It uses SQLite instead of production-grade
+database servers, it depends on synchronous request chains instead of event-
+driven messaging, and it simulates identity through session state plus
+forwarded headers rather than implementing real authentication and
+authorization. These choices keep the codebase understandable and easy to run
+locally, but they also create functional and architectural limitations that
+are important to document.
+
+Overall, the project is a solid educational microservice system. It covers
+catalog browsing, cart management, ordering, payment creation, shipping
+creation, review validation, and recommendation generation. The implementation
+is consistent across services, which makes the system easy to inspect and
+extend. The main value of the project is not just that it works, but that it
+shows how a multi-service bookstore can be structured, deployed, and reasoned
+about in a concrete codebase.
+
+====================================================================
+2. SYSTEM OVERVIEW
+====================================================================
+
+The project implements an online bookstore with three main user roles:
+customer, staff, and manager. Customers browse books, add them to carts,
+checkout, and submit reviews. Staff manage books and update shipping-related
+status from the gateway UI. Managers view dashboard-style operational data.
+
+The architecture follows a microservice layout. Rather than using one Django
+project for all features, the system contains multiple Django projects. Every
+service has the same internal structure:
+
+- manage.py as the Django command entry point
+- config/ as the Django project package
+- app/ as the main application package
+- app/models.py for persistent entities
+- app/serializers.py for DRF serialization
+- app/views.py for API logic and orchestration logic
+- app/urls.py for router registration
+- Dockerfile for service container build and startup
+
+This repeated structure is one of the strengths of the project. Once one
+service is understood, the rest are easy to inspect because they follow the
+same pattern. The project also avoids using folder names as Python packages,
+which is necessary because some service directories contain hyphens, such as
+comment-rate and api-gateway.
+
+The API layer is built with Django REST Framework ModelViewSet in almost all
+services. This gives a predictable REST design where each service exposes list,
+create, retrieve, update, partial_update, and delete operations unless custom
+logic is added. Some services only need basic CRUD behavior, while others add
+workflow-specific logic on top of DRF.
+
+The entire system is orchestrated with Docker Compose. Each service runs inside
+its own container, exposes Django on container port 8000, and maps to a unique
+host port so all services can be inspected independently. Compose also injects
+environment variables so services know how to reach their downstream
+dependencies.
+
+This is not an event-driven system. It is synchronous and request-response
+oriented. When one service needs data or must trigger an action in another
+service, it performs an immediate HTTP request using requests. This design is
+simple and explicit, but it means end-to-end workflows depend directly on the
+availability and latency of all downstream services involved.
+
+====================================================================
+3. TECHNOLOGY STACK AND DEPLOYMENT MODEL
+====================================================================
+
+The technical stack is intentionally minimal. The root requirements file lists
+three primary dependencies used throughout the system:
+
+- django
+- djangorestframework
+- requests
+
+Each service Dockerfile follows essentially the same pattern. It uses a Python
+3.12 slim image, installs dependencies, copies project files, runs database
+migrations, and then starts Django's development server with runserver bound to
+0.0.0.0:8000.
+
+This gives the system several practical advantages:
+
+- it is easy to run on a local development machine
+- it avoids environment drift across services
+- it requires little setup knowledge from the user
+- every container is self-contained and reproducible
+
+The tradeoff is that the deployment model is development-oriented rather than
+production-oriented. Django runserver is not meant for production workloads,
+SQLite is not intended for high-concurrency distributed systems, and the
+containers do not include production process managers, reverse proxies, shared
+logging, or resilience infrastructure.
+
+The port mapping across the system is as follows:
+
+- staff: 8000
+- manager: 8001
+- customer: 8002
+- catalog: 8003
+- book: 8004
+- cart: 8005
+- order: 8006
+- ship: 8007
+- pay: 8008
+- comment-rate: 8009
+- recommender-ai: 8010
+- api-gateway: 8011
+
+Internally, service-to-service calls use Docker service names on port 8000.
+For example, the cart service calls the book service at http://book:8000 and
+the order service calls the pay service at http://pay:8000. Docker Compose
+handles network-level name resolution for these service names.
+
+The deployment topology is therefore simple but effective: multiple Django
+containers on one Docker network, one database file per service, and all user
+interaction routed through the gateway.
+
+====================================================================
+4. SERVICE-BY-SERVICE ARCHITECTURE
+====================================================================
+
+4.1 Staff Service
+
+The staff service is a straightforward CRUD microservice that stores staff
+profiles. Its Staff model contains full_name, email, role, is_active, and
+created_at. The API is exposed through /staff/ and managed by a DRF
+ModelViewSet. This service does not call any other service. Its role in the
+larger system is to act as a source of staff records for dashboards and future
+administrative workflows.
+
+Architecturally, this is one of the cleanest services because it is focused,
+self-contained, and easy to understand. It demonstrates the simplest pattern in
+the project: one model, one serializer, one viewset, one router entry.
+
+4.2 Manager Service
+
+The manager service is similar to the staff service. It stores manager records
+using the Manager model with fields such as full_name, email, department, and
+created_at. Its API is exposed through /managers/ and it does not call any
+other service.
+
+One important architectural observation is that the API Gateway does not
+actually use the manager service in its current implementation. The gateway has
+manager-facing dashboard pages, but those pages are composed from other service
+data such as orders, books, payments, customers, and staff. The manager service
+exists as an isolated directory of manager records rather than as an active
+part of runtime request orchestration.
+
+4.3 Customer Service
+
+The customer service is the first service that goes beyond simple CRUD. It
+stores customer data using the Customer model with full_name, email, phone,
+address, cart_id, and created_at. The important field here is cart_id, which is
+an integer reference to the customer's cart in the cart service.
+
+When a new customer is created, the service does more than save a database
+record. It immediately calls the cart service to create a cart for the new
+customer. If the cart creation succeeds, the returned cart identifier is stored
+back in the customer record. If the cart creation fails, the customer is still
+created and the response includes a warning instead of fully rejecting the
+request.
+
+This is a useful example of graceful degradation. The service preserves core
+data consistency for customer registration even if a downstream service is
+unavailable. However, it also means that a customer record may exist without a
+linked cart if the cart service is down during creation.
+
+4.4 Catalog Service
+
+The catalog service stores category data. Its Category model includes a unique
+name and an optional description. It exposes /categories/ through a standard
+ModelViewSet and performs no outbound requests.
+
+The service serves as the book classification layer. The API Gateway uses it to
+fetch category data for home page filtering and contextual display. Although it
+is simple, it establishes an important conceptual separation between inventory
+items and taxonomy.
+
+4.5 Book Service
+
+The book service stores the core inventory data for sellable books. Its Book
+model includes title, author, isbn, price, stock, category_id, and created_at.
+The category_id field is only a plain integer and logically points to a category
+in the catalog service. Because each service owns its own database, there is no
+real cross-database foreign key.
+
+The book service is one of the most central services in the system. It is used
+by the gateway for listings and detail pages, by staff workflows for creating
+and editing books, by the cart service for validating cart items, and by the
+checkout flow for price lookups. This makes it a core dependency in practical
+terms, even though it remains a simple CRUD API internally.
+
+4.6 Cart Service
+
+The cart service handles shopping carts and cart items. It contains two models:
+Cart and CartItem. Cart includes customer_id, is_active, and created_at.
+CartItem includes a foreign key to Cart, a book_id, a quantity, and timestamps.
+The unique_together constraint on cart and book_id ensures that the same book
+cannot appear as multiple separate rows in the same cart.
+
+This service provides custom actions in addition to standard CRUD. The most
+important are add-item and clear-items.
+
+The add-item action first validates the target book by calling the book service.
+If the book exists, the cart service either creates a new cart item or increases
+the quantity of an existing one. This is a good example of local persistence
+plus external validation. The clear-items action removes all items from a cart,
+which is used by the gateway after successful checkout.
+
+This service demonstrates a practical microservice pattern: the service stores
+local transactional state while depending on another service to validate that a
+referenced external entity is real.
+
+4.7 Order Service
+
+The order service is the central business process service for purchase
+completion. Its Order model contains customer_id, total_price, status,
+shipping_address, and created_at. Status values include pending, paid, shipped,
+and completed.
+
+This service does not just store orders. It orchestrates downstream payment and
+shipping creation. When a new order is created, the service:
+
+- saves the order record in its own database
+- sends a POST request to the pay service to create a payment
+- sends a POST request to the ship service to create a shipment
+- updates local status to paid if the payment creation succeeds
+- returns order information enriched with payment and shipping result details
+
+This is a key architectural point: the order service is the workflow trigger
+that starts both payment and shipping. In other words, the order is not passive
+storage. It actively initiates the next business steps after checkout.
+
+The current implementation means the customer does not independently choose a
+payment service or a shipping service implementation. Instead, once the gateway
+submits the order, the order service automatically triggers both pay and ship as
+part of a synchronous order-creation transaction flow. That design is simple and
+reasonable for this project, but it is important to describe accurately.
+
+Another important detail is how book IDs are preserved. The gateway encodes the
+purchased book IDs inside the shipping_address field using a suffix such as
+|books:1,2,3. This allows later services to infer which books were purchased in
+each order without introducing a separate order-items data structure.
+
+4.8 Pay Service
+
+The pay service stores payment records. Its Payment model includes order_id,
+amount, status, and paid_at. It exposes /payments/ using a standard CRUD API.
+It does not call any external services.
+
+Functionally, the pay service acts as a ledger rather than a real payment
+processor. It records the payment that the order service asks it to create.
+There is no integration with a payment gateway, no payment method capture, and
+no authorization or settlement logic. This is acceptable for the educational
+scope because the service still models a clear payment domain boundary.
+
+4.9 Ship Service
+
+The ship service stores shipment records. Its Shipment model includes order_id,
+customer_id, address, status, and created_at. It exposes /shipments/ and has no
+outbound dependencies.
+
+Like the pay service, the ship service is a passive record service. It does not
+plan routes or integrate with couriers. Instead, it records shipment state that
+other parts of the system can inspect or update. The order service creates a
+shipment during checkout, and the API Gateway provides staff-facing operations
+that update shipping-related order state.
+
+4.10 Comment-Rate Service
+
+The comment-rate service stores user reviews and star ratings. Its CommentRate
+model contains book_id, customer_id, comment, rating, and created_at. The
+service is more interesting than a simple CRUD service because it enforces a
+business rule: customers can only review books they purchased.
+
+To enforce this rule, the service calls the order service when a review is
+submitted. It fetches orders, finds those belonging to the customer, extracts
+purchased book IDs from the encoded shipping_address marker, and checks whether
+the requested book appears in the customer's order history. If not, it rejects
+the review with a 403 response.
+
+This is a strong example of business rule enforcement across service boundaries.
+The service does not trust the gateway alone. It validates purchase evidence on
+its own by consulting the order service. It also exposes two routes,
+/comments/ and /comments-rates/, both mapped to the same viewset. That suggests
+compatibility support for varying client expectations.
+
+4.11 Recommender-AI Service
+
+The recommender-ai service generates recommended books for a user. It defines a
+Recommendation model with customer_id, recommended_book_id, score, reason, and
+created_at, but in practice the service does not rely on the database model for
+its main endpoint. Instead, recommendations are computed dynamically when the
+endpoint is called.
+
+The recommendation algorithm combines two signals:
+
+- how often a book appears in successful orders
+- how strongly that book is rated by users, especially high ratings
+
+The service fetches order data from the order service and rating data from the
+comment-rate service. It parses ordered books, calculates order frequency,
+computes average high ratings, and assigns a combined score. It then excludes
+books already ordered by the current user, based on the forwarded X-Actor-Id
+header from the gateway, and returns the highest-ranked results.
+
+This service is a good example of derived data aggregation in a microservice
+environment. Rather than duplicating all source data locally, it computes a view
+of recommendation results from existing services. The downside is performance and
+dependency sensitivity: every recommendation request depends on live upstream
+services.
+
+4.12 API Gateway Service
+
+The api-gateway is the entry point for browser users and the most complex
+service in the system. Unlike the other services, it contains both API helper
+logic and server-rendered HTML views using Django templates. It orchestrates
+almost every user-facing workflow.
+
+Key gateway responsibilities include:
+
+- rendering the home page with books, categories, ratings, and recommendations
+- rendering detailed book pages
+- managing the add-to-cart flow
+- showing the shopping cart with price aggregation
+- performing checkout
+- showing a success page after ordering
+- submitting reviews
+- switching active user identity in the session
+- rendering manager and staff dashboards
+- allowing staff to create, edit, and delete books
+- providing an aggregate endpoint across multiple services
+
+The gateway uses helper methods such as _safe_get, _safe_post, _safe_patch,
+and _safe_delete to make resilient calls to backend services. It also attaches
+actor headers to requests so downstream services know which user and role are
+currently active.
+
+Architecturally, the gateway is the facade of the system. It hides the service
+boundaries from end users and translates a distributed set of APIs into a
+cohesive application experience.
+
+====================================================================
+5. INTER-SERVICE COMMUNICATION PATTERNS
+====================================================================
+
+The project uses straightforward synchronous HTTP communication. There is no
+message queue, no asynchronous task system, and no event bus. This makes the
+call graph explicit and easy to follow.
+
+The major communication chains are:
+
+- customer -> cart during customer registration
+- cart -> book during add-item validation
+- order -> pay during order creation
+- order -> ship during order creation
+- comment-rate -> order during review validation
+- recommender-ai -> order and comment-rate during recommendation generation
+- api-gateway -> nearly all other services for user-facing pages and actions
+
+This model has several strengths. It is easy to debug, the flow of data is
+visible in code, and each service remains conceptually independent. It also has
+clear weaknesses. End-to-end latency increases with each extra downstream call,
+and any failure in a required dependency can break or degrade the whole request.
+
+The gateway tries to manage this with safe helper wrappers and tolerant default
+behavior for noncritical requests. For example, pages can still render even if
+recommendations or some auxiliary aggregates fail. This is useful from a user
+experience standpoint, but it also means silent failures may be harder to spot
+without centralized monitoring.
+
+A particularly important workflow is checkout. The flow is:
+
+1. customer submits checkout in the API Gateway
+2. gateway loads the cart and book data to compute totals
+3. gateway creates an order in the order service
+4. order service triggers payment creation in pay
+5. order service triggers shipment creation in ship
+6. gateway clears cart items
+7. gateway renders success information
+
+So the architectural truth is that payment and shipping are initiated by the
+order service after the gateway submits the order. The customer indirectly
+causes payment and shipping through checkout, but the internal trigger point is
+the order service itself.
+
+====================================================================
+6. DATA DESIGN AND PERSISTENCE STRATEGY
+====================================================================
+
+A defining property of the system is that each service owns its own SQLite
+database. There is no shared database schema. This is the correct architectural
+choice for a microservice-oriented design because it prevents direct storage-
+level coupling between services.
+
+However, once databases are isolated, relationships must be represented at the
+application layer rather than at the relational database layer. This project
+does that by storing raw integer references.
+
+Examples include:
+
+- customer.cart_id references a cart record in another service
+- book.category_id references a category in another service
+- cart.customer_id references a customer in another service
+- cartitem.book_id references a book in another service
+- payment.order_id references an order in another service
+- shipment.order_id and shipment.customer_id reference external records
+- comment-rate.book_id and customer_id reference external records
+
+This is simple and common in microservice systems, but it introduces a risk:
+there is no database-enforced referential integrity across service boundaries.
+If a downstream record is deleted or becomes inconsistent, the integers remain
+and application logic must handle the mismatch.
+
+The most unconventional part of persistence design is the encoding of purchased
+book IDs inside order.shipping_address. This is a workaround for the absence of
+an OrderItem model or equivalent relational structure. It allows later services
+to infer purchased books from a single text field, but it mixes shipping data
+with order line data. This would not scale well in a production system, yet it
+is important for understanding the current project because both comment-rate and
+recommender-ai depend on that encoding.
+
+The recommendation service also reveals another design pattern: not every model
+is operationally used. The Recommendation model exists, but runtime requests are
+computed dynamically rather than persisted. Similarly, the GatewayLog model in
+the API Gateway exists but is not actively used in request handling. These are
+useful observations for anyone evaluating code completeness versus runtime
+behavior.
+
+====================================================================
+7. IDENTITY, ACCESS, AND USER INTERACTION MODEL
+====================================================================
+
+The system does not implement a full authentication stack. Instead, the gateway
+simulates identity through session state. Users can switch among predefined
+identities such as manager-1, staff-1, customer-1, customer-2, and customer-3.
+The selected identity is stored in the Django session.
+
+For each outgoing request to backend services, the gateway forwards:
+
+- X-Actor-Role
+- X-Actor-Id
+
+This creates a lightweight identity propagation mechanism. The gateway itself
+uses role checks to protect views. For example, only customers can add items to
+cart or checkout, only staff can manage books, and only the manager identity
+can access the manager dashboard.
+
+This approach is useful for demonstrations because it avoids building a full
+login system while still allowing multi-role testing. However, it is not secure.
+Downstream services generally do not enforce these headers. A client calling the
+services directly could forge role and identity headers. Therefore, true access
+control exists mainly in the gateway rather than across the entire distributed
+system.
+
+From a user-experience perspective, this model is practical for a course or demo
+setting. It lets one browser session simulate multiple actors quickly. From a
+software engineering perspective, it is best understood as a temporary or
+educational mechanism, not a production-grade identity architecture.
+
+====================================================================
+8. KNOWN ISSUES, LIMITATIONS, AND ARCHITECTURAL RISKS
+====================================================================
+
+Several issues in the current codebase are important to document.
+
+First, there is a gateway bug where the manager dashboard queries /staffs/
+instead of /staff/. Because the staff service exposes /staff/, this mismatch
+prevents correct staff-count retrieval.
+
+Second, the gateway counts completed payments using a status value that does not
+exist in the pay service model. The Payment model supports pending, paid, and
+failed, not completed. That makes some dashboard metrics inaccurate.
+
+Third, STAFF_SERVICE_URL is not properly defined in Docker Compose for the
+gateway, although the gateway code falls back to a default URL. The fallback may
+work in the Compose network, but the configuration remains incomplete.
+
+Fourth, the comment-rate service includes a fallback order URL value using
+order-service rather than order. In Docker Compose this is masked by the correct
+environment variable, but the fallback itself is inconsistent.
+
+Fifth, recommendation persistence is not actually used. The Recommendation model
+exists, but the endpoint computes live results. This is not a bug by itself, but
+it indicates unfinished or placeholder design.
+
+Sixth, the architecture is tightly coupled through synchronous calls. If order,
+pay, or ship becomes slow or unavailable, checkout degrades immediately. There
+is no retry queue, no circuit breaker, and no asynchronous compensation model.
+
+Seventh, the system uses SQLite inside each service. SQLite is convenient, but
+it is not well-suited for concurrent writes or larger-scale deployment. Combined
+with Django runserver, this confirms the project is development-grade rather
+than production-grade.
+
+Finally, the lack of real authentication and downstream authorization is the
+largest security limitation. The system depends on trusted routing through the
+gateway rather than robust service-level verification.
+
+====================================================================
+9. EVALUATION OF THE SYSTEM DESIGN
+====================================================================
+
+From an educational point of view, the design is successful. It shows how a
+single business domain can be decomposed into multiple smaller services with
+clear responsibilities. It also demonstrates that a microservice system is not
+only about splitting code; it also requires explicit thinking about data
+ownership, remote communication, error handling, and workflow orchestration.
+
+The strongest design qualities are:
+
+- consistent structure across services
+- clear use of DRF routers and serializers
+- well-defined responsibility boundaries
+- understandable orchestration in the order and gateway services
+- practical review validation logic tied to purchase history
+- recommendation logic based on real cross-service data aggregation
+
+The main weaknesses are:
+
+- overly synchronous runtime dependencies
+- lack of real authentication and distributed authorization
+- encoded order-item data inside shipping_address
+- unused models indicating partial implementation ideas
+- development-only deployment stack
+
+Even with these weaknesses, the project is coherent. The system does not feel
+randomly assembled. It follows a repeatable pattern, and the more complex pieces
+such as customer registration, checkout, reviews, and recommendations are built
+on top of that pattern in a reasonably disciplined way.
+
+====================================================================
+10. CONCLUSION AND RECOMMENDATIONS
+====================================================================
+
+The Bookstore Microservice System is a strong example of a small-scale
+microservice architecture built for learning and demonstration. It successfully
+separates functional domains, uses service-specific databases, exposes clean
+REST endpoints, and implements meaningful business workflows across service
+boundaries.
+
+The most important technical fact about the system is that the order service is
+responsible for triggering payment creation and shipment creation. The customer
+interacts through the gateway and initiates checkout, but payment and shipping
+are downstream effects of order creation. This distinction is important when
+describing the system accurately.
+
+If the project is extended further, the most valuable next improvements would
+be:
+
+- add a dedicated OrderItem model instead of storing purchased book IDs inside
+  shipping_address
+- implement real authentication and service-level authorization
+- replace SQLite with PostgreSQL or another production-capable database
+- move from Django runserver to a production WSGI or ASGI setup
+- add observability such as structured logs and trace identifiers
+- consider asynchronous messaging for order, payment, and shipping workflows
+- fix the current gateway URL and dashboard metric inconsistencies
+
+In conclusion, this codebase is well-suited for explaining microservice
+architecture in a concrete and practical way. It contains enough moving parts to
+show realistic distributed system concerns while remaining readable and small
+enough to study service by service. For an 8 to 10 page technical description,
+it provides strong material in architecture, service design, deployment,
+communication patterns, persistence strategy, and system limitations.
+
+END OF REPORT

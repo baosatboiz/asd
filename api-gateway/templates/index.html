@@ -1,0 +1,250 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BookStore Gateway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1c2a2a;
+      --muted: #5f6f73;
+      --brand: #0f766e;
+      --brand-deep: #115e59;
+      --line: #d8e1df;
+      --accent: #f59e0b;
+      --danger: #b91c1c;
+      --ok: #166534;
+      --shadow: 0 18px 40px rgba(17, 30, 30, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(70rem 35rem at -10% -20%, #d9efe7 0%, transparent 55%),
+        radial-gradient(55rem 28rem at 110% 0%, #fde7c2 0%, transparent 52%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .shell {
+      max-width: 1160px;
+      margin: 0 auto;
+      animation: rise .4s ease-out;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    nav {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 18px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    nav a {
+      text-decoration: none;
+      color: var(--ink);
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+    nav a:hover { background: #ecf6f4; color: var(--brand-deep); }
+    .identity { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+    .identity select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+    .hero {
+      background: linear-gradient(130deg, #134e4a 0%, #0f766e 48%, #0d9488 100%);
+      color: #fff;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      letter-spacing: .2px;
+      font-size: 2rem;
+    }
+    .sub { margin-top: 8px; opacity: .9; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    h2 { margin: 0 0 12px; font-size: 1.1rem; }
+    .category-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .pill {
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid #b5c9c6;
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+      background: #f7fbfa;
+    }
+    .pill.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .book-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .book-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fff;
+      display: grid;
+      gap: 6px;
+    }
+    .book-title { font-weight: 800; font-size: 1.02rem; }
+    .meta { color: var(--muted); font-size: .93rem; }
+    .rating { font-size: .92rem; color: #7c2d12; font-weight: 700; }
+    .book-card form { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+    .book-card input {
+      width: 62px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px;
+    }
+    button {
+      border: none;
+      background: var(--brand);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover { background: var(--brand-deep); }
+    .link { color: var(--brand-deep); font-weight: 700; text-decoration: none; }
+    .error {
+      background: #fee2e2;
+      border: 1px solid #fecaca;
+      color: var(--danger);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 0 0 14px;
+      font-weight: 700;
+    }
+    .tips { color: var(--muted); font-size: .92rem; }
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .identity { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+  <nav>
+    <a href="/">Catalog</a>
+    <a href="/cart/">My Cart</a>
+    {% if current_identity.role == "staff" %}
+      <a href="/staff/dashboard/">Dashboard</a>
+    {% else %}
+      <a href="/dashboard/">Dashboard</a>
+    {% endif %}
+    <form method="post" action="/switch-identity/" class="identity">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="identity_key">Switch User</label>
+      <select id="identity_key" name="identity_key" onchange="this.form.submit()">
+        {% for opt in identity_options %}
+          <option value="{{ opt.key }}" {% if current_identity.key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <span>Active: <strong>{{ current_identity.label }}</strong></span>
+  </nav>
+
+  <section class="hero">
+    <h1>BookStore Catalog</h1>
+    <div class="sub">Browse by category, discover recommendations, and place orders in one flow.</div>
+  </section>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <div class="grid">
+    <div class="card">
+      <h2>Categories</h2>
+      <div class="category-pills">
+        <a class="pill {% if not selected_category_id %}active{% endif %}" href="/">All</a>
+        {% for category in categories %}
+          <a class="pill {% if selected_category_id == category.id %}active{% endif %}" href="/?category={{ category.id }}">{{ category.name }}</a>
+        {% empty %}
+          <span>No categories available.</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recommendations</h2>
+      <ul>
+        {% for rec in recommendations %}
+          <li>
+            <strong>{{ rec.display_title }}</strong>
+            <div class="tips">Match score: {{ rec.score }}</div>
+            {% if rec.reason %}<div>{{ rec.reason }}</div>{% endif %}
+          </li>
+        {% empty %}
+          <li>No recommendations available.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <h2>Books</h2>
+    <div class="book-grid">
+      {% for book in books %}
+        <div class="book-card">
+          <div class="book-title">{{ book.title }}</div>
+          <div class="rating">
+            {% if book.avg_rating %}
+              Rated {{ book.avg_rating }}/5 from {{ book.rating_count }} reviews
+            {% else %}
+              No ratings yet
+            {% endif %}
+          </div>
+          <div class="meta">Author: {{ book.author }}</div>
+          <div class="meta">Price: ${{ book.price }}</div>
+          <div class="meta">Category ID: {{ book.category_id }}</div>
+          <div><a class="link" href="/books/{{ book.id }}/">Read reviews</a></div>
+          {% if is_customer %}
+            <form method="post" action="/add-to-cart/">
+              {% csrf_token %}
+              <input type="hidden" name="book_id" value="{{ book.id }}">
+              <label for="q{{ book.id }}">Qty</label>
+              <input id="q{{ book.id }}" name="quantity" type="number" min="1" value="1">
+              <button type="submit">Add to Cart</button>
+            </form>
+          {% else %}
+            <p class="tips">Switch to a Customer identity to add items.</p>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p>No books for this filter.</p>
+      {% endfor %}
+    </div>
+  </div>
+  </div>
+</body>
+</html>

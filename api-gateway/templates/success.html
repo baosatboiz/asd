@@ -1,0 +1,190 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Order Success</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1c2a2a;
+      --muted: #5f6f73;
+      --brand: #0f766e;
+      --brand-deep: #115e59;
+      --line: #d8e1df;
+      --danger: #991b1b;
+      --ok: #166534;
+      --shadow: 0 18px 40px rgba(17, 30, 30, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      padding: 24px;
+      color: var(--ink);
+      background: radial-gradient(50rem 28rem at 100% -10%, #e7f3ef 0%, transparent 56%), var(--bg);
+    }
+    .shell { max-width: 920px; margin: 0 auto; }
+    nav {
+      margin-bottom: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    nav a { text-decoration: none; color: var(--ink); font-weight: 700; border-radius: 9px; padding: 7px 11px; }
+    nav a:hover { background: #ecf6f4; color: var(--brand); }
+    .identity { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+    .identity select { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+    .card {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 14px;
+    }
+    h1 { margin: 0; font-family: "Space Grotesk", sans-serif; }
+    .ok { color: var(--ok); font-weight: 800; }
+    .bad {
+      color: var(--danger);
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      background: #fee2e2;
+      padding: 9px 11px;
+      font-weight: 800;
+    }
+    .line { margin: 0; color: var(--muted); }
+    .chip {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8ddd9;
+      background: #f0faf8;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    h3 { margin: 8px 0 0; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #f8fbfa;
+      font-size: .88rem;
+    }
+    form { display: grid; gap: 10px; max-width: 460px; }
+    select, input {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 11px;
+      font: inherit;
+    }
+    button {
+      border: none;
+      background: var(--brand);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 800;
+      width: fit-content;
+    }
+    button:hover { background: var(--brand-deep); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .identity { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+  <nav>
+    <a href="/">Catalog</a>
+    <a href="/cart/">My Cart</a>
+    {% if current_identity.role == "staff" %}
+      <a href="/staff/dashboard/">Dashboard</a>
+    {% else %}
+      <a href="/dashboard/">Dashboard</a>
+    {% endif %}
+    <form method="post" action="/switch-identity/" class="identity">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="identity_key">Switch User</label>
+      <select id="identity_key" name="identity_key" onchange="this.form.submit()">
+        {% for opt in identity_options %}
+          <option value="{{ opt.key }}" {% if current_identity.key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <span>Active: <strong>{{ current_identity.label }}</strong></span>
+  </nav>
+
+  <div class="card">
+    <h1>Order Placed Successfully</h1>
+    {% if message %}
+      <p class="ok">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+      <p class="bad">{{ error }}</p>
+      <script>window.alert("{{ error|escapejs }}");</script>
+    {% endif %}
+    <p class="line"><span class="chip">Order ID: {{ order_id }}</span><span class="chip">Payment: {{ payment_status }}</span><span class="chip">Shipment: {{ shipment_status }}</span></p>
+
+    {% if payment_record %}
+      <h3>Payment Details</h3>
+      <pre>{{ payment_record }}</pre>
+    {% endif %}
+
+    {% if shipment_record %}
+      <h3>Shipment Details</h3>
+      <pre>{{ shipment_record }}</pre>
+    {% endif %}
+
+    <h3>Rate Your Purchase</h3>
+    {% if is_customer %}
+      <form method="post" action="/submit-review/">
+        {% csrf_token %}
+        <input type="hidden" name="order_id" value="{{ order_id }}">
+        <input type="hidden" name="customer_id" value="{{ order_customer_id }}">
+        <label for="book_id">Book</label>
+        {% if books %}
+          <select id="book_id" name="book_id" required>
+            {% for book in books %}
+              <option value="{{ book.id }}">{{ book.title }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <p style="color:#a11;">No purchased books found for this order.</p>
+        {% endif %}
+        <label for="rating">Rating</label>
+        <select id="rating" name="rating" required>
+          <option value="5">5</option>
+          <option value="4">4</option>
+          <option value="3">3</option>
+          <option value="2">2</option>
+          <option value="1">1</option>
+        </select>
+        <label for="comment">Comment</label>
+        <input id="comment" name="comment" placeholder="Share your feedback" required>
+        <button type="submit" {% if not books %}disabled{% endif %}>Submit Review</button>
+      </form>
+    {% else %}
+      <p>Switch to a Customer identity to submit a review.</p>
+    {% endif %}
+  </div>
+  </div>
+</body>
+</html>
