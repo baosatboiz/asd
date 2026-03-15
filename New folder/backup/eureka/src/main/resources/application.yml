@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: eureka
+
+server:
+  port: 8761
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    eviction-interval-timer-in-ms: 2000
+    enable-self-preservation: false
+    response-cache-update-interval-ms: 500  # was 2000 ms — clients see DOWN within 500 ms of server knowing
+    response-cache-auto-expiration-in-seconds: 1
+    use-read-only-response-cache: false

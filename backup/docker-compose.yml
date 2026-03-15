@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: users
+      POSTGRES_PASSWORD: users
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users -d users_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-net # Chỉ nằm trong mạng DB
+
+  eureka:
+    build:
+      context: ./eureka
+    container_name: eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - backend-net # Chỉ nằm trong mạng chung
+
+  user-service:
+    build:
+      context: ./user-service
+    environment:
+      EUREKA_SERVER_URL: http://eureka:8761/eureka
+      SERVER_PORT: 8083
+      DB_URL: jdbc:postgresql://postgres:5432/users_db?connectTimeout=3&socketTimeout=3&tcpKeepAlive=true
+      DB_USERNAME: users
+      DB_PASSWORD: users
+      # VŨ KHÍ CHỐNG LỖI IP: Ép dùng hostname thay vì IP
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka:
+        condition: service_started
+    networks:
+      - backend-net # Dây nối với Gateway/Eureka
+      - db-net      # Dây nối với Postgres
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: api-gateway
+    environment:
+      EUREKA_SERVER_URL: http://eureka:8761/eureka
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka
+      - user-service
+    networks:
+      - backend-net # Chỉ nằm trong mạng chung
+
+networks:
+  backend-net: # Mạng để các service nhìn thấy nhau
+  db-net:      # Mạng riêng tư cho Database
+
+volumes:
+  postgres-data:

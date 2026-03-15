@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: user-service
+  datasource:
+    # Fail fast on broken DB links so health transitions to DOWN sooner.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/users_db?connectTimeout=3&socketTimeout=3&tcpKeepAlive=true}
+    username: ${DB_USERNAME:users}
+    password: ${DB_PASSWORD:users}
+    hikari:
+      keepalive-time: 30000        # probe idle connections every 30 s → fast TCP-drop detection
+      connection-timeout: 5000     # fail fast when borrowing a new connection
+      validation-timeout: 3000     # JDBC isValid() cap during health-check
+      connection-test-query: SELECT 1
+  sql:
+    init:
+      mode: never        # schema.sql/data.sql already applied; re-running on every boot
+                         # triggers DataSourceInitializerInvoker during the first Eureka
+                         # health check (foReplicator-%d), holding the bean-registry lock and
+                         # causing a 29-second DOWN window. Use Flyway/Liquibase for migrations.
+
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: ${spring.application.name}
+    version: ${APP_VERSION:1.0.0}
+
+eureka:
+  instance:
+    lease-renewal-interval-in-seconds: 1    # faster heartbeat and health propagation
+    lease-expiration-duration-in-seconds: 3 # stale instances age out faster
+    initial-instance-info-replication-interval-seconds: 15  # delay first Eureka registration
+                         # past Spring Boot startup so HikariCP is fully initialised before
+                         # EurekaHealthCheckHandler runs its first check on foReplicator-%d
+    instance-id: ${spring.application.name}:${spring.cloud.client.hostname}:${server.port}
+    prefer-ip-address: true
+    health-check-url-path: /actuator/health
+    metadata-map:
+      version: ${APP_VERSION:1.0.0}
+  client:
+    registry-fetch-interval-seconds: 2     # was 5 s — pull updated registry every 2 s
+    healthcheck:
+      enabled: true
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},${eureka.instance.instance-id:unknown}]"

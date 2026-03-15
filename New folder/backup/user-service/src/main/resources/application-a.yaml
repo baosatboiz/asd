@@ -1,0 +1,6 @@
+server:
+  port: 8083
+
+info:
+  app:
+    version: 1.0.0-A
