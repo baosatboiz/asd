@@ -18,8 +18,8 @@ Describe or diagram the high-level Business Process to be automated.
 
 - **Domain**: E-commerce
 - **Business Process**: Account onboarding, product catalog management, and checkout order orchestration
-- **Actors**: Guest user, registered user, admin, warehouse admin, identity service, product service, order service, inventory service, workflow worker, Camunda engine, notification channel (email)
-- **Scope**: User registration, email verification, login/logout, profile retrieval, product catalog CRUD (admin write, public read), order creation, inventory reserve/confirm/release, and payment-result driven status transitions
+- **Actors**: Guest user, registered user, admin, warehouse admin, identity service, product service, order service, inventory service, payment service, workflow worker, Camunda engine
+- **Scope**: User registration, email verification, login/logout, profile retrieval, product catalog CRUD (admin write, public read), order creation, inventory reserve/confirm/release, payment initiation and result correlation, and payment-result driven status transitions
 
 **Process Diagram:**
 
@@ -62,13 +62,15 @@ flowchart TD
     subgraph CHECKOUT[Checkout Saga Context]
         SP[Start Saga Process]
         RS[Reserve Inventory]
+        PI[Initiate Payment]
+        PS[Payment Result]
         GW{Payment Success?}
         CF[Confirm Inventory]
         RL[Release Inventory]
         US[Update Order Status]
     end
 
-    CO --> SP --> RS --> GW
+    CO --> SP --> RS --> PI --> PS --> GW
     GW -->|Yes| CF --> US
     GW -->|No/Timeout| RL --> US
 ```
@@ -80,6 +82,7 @@ flowchart TD
 | Legacy spreadsheet + manual email | Manual process | Store account requests and product list | Human operation only |
 | Existing social login provider (optional future) | External SaaS | Potential upstream identity source | OAuth2/OIDC (planned) |
 | Payment gateway sandbox (mock) | External SaaS | Sends payment success/failure result for checkout flow | REST callback / message correlation |
+| External payment gateway (future) | External SaaS | Real payment provider for initiated transactions | Webhook / REST callback |
 
 Current assignment baseline assumes no trusted legacy automation in production flow.
 
@@ -93,6 +96,7 @@ Current assignment baseline assumes no trusted legacy automation in production f
 | Availability   | Core APIs target 99.9% service availability with graceful degradation for non-critical email verification delays |
 | Data Consistency | Checkout across order + inventory uses Saga orchestration with compensation (no distributed transaction) |
 | Idempotency | Reserve/confirm/release inventory operations must be idempotent via orderId key |
+| Async Payment Handling | Payment confirmation is asynchronous and must resume the saga through message correlation |
 
 ---
 
@@ -108,7 +112,7 @@ Format: past tense (e.g., "OrderPlaced", "PaymentReceived").
 | 1 | UserRegistrationRequested | RegisterAccount | A guest submits username, password, and email |
 | 2 | UserRegistered | RegisterAccount | New user aggregate is created in PENDING state |
 | 3 | VerificationCodeGenerated | RegisterAccount | Verification token/code is generated |
-| 4 | VerificationEmailRequested | PublishVerificationMessage | Notification message is sent to email channel |
+| 4 | VerificationEmailRequested | PublishVerificationMessage | Verification email is sent by Identity Service |
 | 5 | EmailVerified | VerifyEmail | User provides valid verification code |
 | 6 | UserActivated | VerifyEmail | Account state changes from PENDING to ACTIVE |
 | 7 | UserLoginRequested | Login | Credentials are submitted for authentication |
@@ -127,6 +131,10 @@ Format: past tense (e.g., "OrderPlaced", "PaymentReceived").
 | 20 | InventoryReleased | ReleaseInventory | Reserved stock is returned to available stock |
 | 21 | OrderConfirmed | UpdateOrderStatus | Order transitions to confirmed |
 | 22 | OrderPaymentFailed | UpdateOrderStatus | Order transitions to payment_failed after compensation |
+| 23 | PaymentInitiated | InitiatePayment | Payment record is created in PENDING state |
+| 24 | PaymentSucceeded | MockResultCallback | Payment service receives successful payment callback |
+| 25 | PaymentFailed | MockResultCallback | Payment service receives failed payment callback |
+| 26 | PaymentCorrelated | CorrelatePaymentResult | Camunda receives message to continue saga |
 
 ### 2.2 Commands and Actors
 
@@ -149,6 +157,9 @@ What Commands trigger those Domain Events, and who issues them?
 | StartCheckoutSaga | Order Service | CheckoutSagaStarted |
 | ReserveInventory | Workflow Worker | InventoryReserved or InventoryReservationFailed |
 | CorrelatePaymentResult | Payment Adapter / Client | PaymentResultReceived |
+| InitiatePayment | Workflow Worker | PaymentInitiated |
+| MockPaymentResult | Webhook / Client | PaymentSucceeded or PaymentFailed |
+| CorrelatePaymentResult | Payment Service | PaymentCorrelated |
 | ConfirmInventory | Workflow Worker | InventoryConfirmed |
 | ReleaseInventory | Workflow Worker | InventoryReleased |
 | UpdateOrderStatus | Workflow Worker | OrderConfirmed, OrderPaymentFailed |
@@ -170,6 +181,7 @@ Group related Commands and Events around the business entities (Aggregates) they
 | InventoryItem | ReserveInventory, ConfirmInventory, ReleaseInventory | InventoryReserved, InventoryConfirmed, InventoryReleased | productId, availableStock, reservedStock, version |
 | InventoryReservation | ReserveInventory, ConfirmInventory, ReleaseInventory | InventoryReserved, InventoryReservationFailed, InventoryConfirmed, InventoryReleased | reservationId, orderId, status, reservedAt, confirmedAt, releasedAt |
 | InventoryHistory | ReserveInventory, ConfirmInventory, ReleaseInventory | InventoryReserved, InventoryConfirmed, InventoryReleased | historyId, productId, eventType, delta, source, idempotencyKey |
+| Payment | InitiatePayment, MockPaymentResult | PaymentInitiated, PaymentSucceeded, PaymentFailed | paymentId, orderId, amount, status, paymentMethod, transactionId |
 
 ### 2.4 Bounded Contexts
 
@@ -179,9 +191,9 @@ Draw boundaries around Aggregates that belong to the same business context. Each
 |-----------------|------------|----------------|
 | Identity and Access Context | UserAccount, VerificationToken, SessionToken | User lifecycle, authentication, authorization boundary |
 | Catalog Context | Product, Category | Product information management and public/admin catalog operations |
-| Notification Integration Context | (No core business aggregate, integration model only) | Outbound event/message translation for email delivery |
 | Order Management Context | Order, OrderItem, OrderEvent | Checkout order lifecycle, status transitions, and order timeline |
 | Inventory Management Context | InventoryItem, InventoryReservation, InventoryHistory | Stock reservation and compensation-safe inventory mutations |
+| Payment Management Context | Payment | Payment record ownership, payment status tracking, and gateway/webhook bridge |
 | Saga Orchestration Context | Process state in Camunda | Coordinates checkout steps and compensation path |
 
 ### 2.5 Context Map
@@ -191,12 +203,13 @@ Show relationships between Bounded Contexts.
 ```mermaid
 graph LR
     IAM[Identity and Access] -- "OHS + Published Language (JWT claims)" --> CATALOG[Catalog]
-    IAM -- "Customer/Supplier" --> NOTI[Notification Integration]
     CATALOG -- "Conformist to IAM auth contract" --> IAM
     IAM -- "Token-based user identity" --> ORDERCTX[Order Management]
     ORDERCTX -- "Customer/Supplier reserve-confirm-release" --> INV[Inventory Management]
+    ORDERCTX -- "Customer/Supplier payment-initiate-result" --> PAY[Payment Management]
     ORCH[Saga Orchestration] -- "Orchestrates process tasks" --> ORDERCTX
     ORCH -- "Orchestrates process tasks" --> INV
+    ORCH -- "Orchestrates process tasks" --> PAY
 ```
 
 **Relationship types:** Upstream/Downstream, Customer/Supplier, Conformist, Anti-Corruption Layer (ACL), Shared Kernel, Open Host Service (OHS), Published Language.
@@ -204,12 +217,13 @@ graph LR
 | Upstream | Downstream | Relationship Type |
 |----------|------------|-------------------|
 | Identity and Access | Catalog | Open Host Service + Published Language |
-| Identity and Access | Notification Integration | Customer/Supplier |
 | Identity and Access | API Gateway (edge layer) | Upstream identity provider for token validation |
 | Identity and Access | Order Management | Open Host Service + Published Language |
 | Order Management | Inventory Management | Customer/Supplier |
 | Saga Orchestration | Order Management | Upstream/Downstream orchestration contract |
 | Saga Orchestration | Inventory Management | Upstream/Downstream orchestration contract |
+| Order Management | Payment Management | Customer/Supplier |
+| Saga Orchestration | Payment Management | Upstream/Downstream orchestration contract |
 
 ---
 
@@ -223,6 +237,7 @@ Full OpenAPI specs:
 - [`docs/api-specs/product-service.yaml`](api-specs/product-service.yaml)
 - `docs/api-specs/order-service.yaml` (supplementary design target)
 - `docs/api-specs/inventory-service.yaml` (supplementary design target)
+- `docs/api-specs/payment-service.yaml` (supplementary design target)
 
 **Identity Service:**
 
@@ -269,6 +284,15 @@ Full OpenAPI specs:
 | /api/v1/inventory/confirm | POST | application/json | 200, 404, 409 |
 | /api/v1/inventory/release | POST | application/json | 200, 404, 409 |
 | /api/v1/inventory/reserved/{orderId} | GET | application/json | 200, 404 |
+
+**Payment Service (Supplementary):**
+
+| Endpoint | Method | Media Type | Response Codes |
+|----------|--------|------------|----------------|
+| /api/v1/payments/initiate | POST | application/json | 201, 400, 404, 409 |
+| /api/v1/payments/{paymentId} | GET | application/json | 200, 404 |
+| /api/v1/payments/order/{orderId} | GET | application/json | 200, 404 |
+| /api/v1/payments/mock-result | POST | application/json | 200, 400 |
 
 ### 3.2 Service Logic Design
 
@@ -350,4 +374,33 @@ flowchart TD
     H --> M[Write inventory history and return]
     J --> M
     L --> M
+```
+
+**Payment Service (Supplementary):**
+
+```mermaid
+sequenceDiagram
+    participant C as Camunda Engine
+    participant W as Workflow Worker
+    participant O as Order Service
+    participant P as Payment Service
+    participant U as Webhook / Client
+
+    C->>W: Fetch External Task (initiate-payment)
+    W->>P: POST /api/v1/payments/initiate (orderId, amount)
+    P-->>W: 201 Created (Payment: PENDING)
+    W->>O: PATCH /internal/orders/{id}/status -> WAITING_PAYMENT
+    W->>C: Complete Task
+    Note over C,W: Camunda waits at Intermediate Message Catch Event ('payment-result')
+
+    U->>P: POST /api/v1/payments/mock-result (orderId, isSuccess)
+    P->>P: DB Update: Payment Status = SUCCESS / FAILED
+
+    alt Thanh toan thanh cong
+        P->>C: POST /engine-rest/message (messageName: payment-result, var: PAYMENT_SUCCESS)
+    else Thanh toan that bai
+        P->>C: POST /engine-rest/message (messageName: payment-result, var: PAYMENT_FAILED)
+    end
+    C-->>P: 200 OK (Correlate Successful)
+    P-->>U: 200 OK (PaymentResponse)
 ```
