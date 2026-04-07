@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ item.name|default:"Clothing Item" }} – Clothes Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1c2a2a;
+      --muted: #5f6f73;
+      --brand: #0f766e;
+      --brand-deep: #115e59;
+      --line: #d8e1df;
+      --accent: #6366f1;
+      --danger: #b91c1c;
+      --shadow: 0 18px 40px rgba(17, 30, 30, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(70rem 35rem at -10% -20%, #d9efe7 0%, transparent 55%),
+        radial-gradient(55rem 28rem at 110% 0%, #fde7c2 0%, transparent 52%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .shell { max-width: 860px; margin: 0 auto; }
+    nav {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 18px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    nav a { text-decoration: none; color: var(--ink); padding: 9px 12px; border-radius: 10px; font-weight: 700; }
+    nav a:hover { background: #ecf6f4; color: var(--brand-deep); }
+    .identity { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+    .identity select { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; color: var(--ink); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .item-header { margin-bottom: 24px; }
+    .item-header h1 { margin: 0 0 6px; font-family: "Space Grotesk", sans-serif; font-size: 2rem; }
+    .item-header .brand { color: var(--muted); font-size: 1rem; margin: 0; }
+    .badges { margin: 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: .85rem;
+      font-weight: 700;
+      background: #ede9fe;
+      color: #4f46e5;
+    }
+    .badge.color-badge { background: #fef3c7; color: #92400e; }
+    .price-block { margin: 20px 0; }
+    .price { font-size: 2.2rem; font-weight: 800; color: var(--brand); }
+    .stock-info { font-size: 1rem; margin-top: 8px; }
+    .stock-info.ok { color: var(--brand); }
+    .stock-info.low { color: var(--danger); font-weight: 700; }
+    .stock-info.out { color: var(--danger); font-weight: 800; }
+    .meta { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; gap: 24px; flex-wrap: wrap; }
+    .meta-item { }
+    .meta-item .label { font-size: .8rem; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .meta-item .value { font-size: 1rem; font-weight: 600; margin-top: 4px; }
+    .actions { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+    a.btn { text-decoration: none; display: inline-block; padding: 10px 20px; border-radius: 10px; font-weight: 800; font-size: .95rem; }
+    a.btn-primary { background: var(--accent); color: #fff; }
+    a.btn-primary:hover { background: #4f46e5; }
+    a.btn-secondary { background: #e5e7eb; color: var(--ink); }
+    a.btn-secondary:hover { background: #d1d5db; }
+    .error { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <nav>
+    <a href="/">Catalog</a>
+    <a href="/clothes/">Clothes</a>
+    <a href="/ai-assistant/">AI Assistant</a>
+    <a href="/cart/">My Cart</a>
+    {% if current_identity.role == "staff" %}
+      <a href="/staff/dashboard/">Dashboard</a>
+      <a href="/staff/manage-clothes/">Manage Clothes</a>
+    {% else %}
+      <a href="/dashboard/">Dashboard</a>
+    {% endif %}
+    <form method="post" action="/switch-identity/" class="identity">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="identity_key">Switch User</label>
+      <select id="identity_key" name="identity_key" onchange="this.form.submit()">
+        {% for opt in identity_options %}
+          <option value="{{ opt.key }}" {% if current_identity.key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <span>Active: <strong>{{ current_identity.label }}</strong></span>
+  </nav>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  {% if item %}
+    <div class="card">
+      <div class="item-header">
+        <h1>{{ item.name }}</h1>
+        <p class="brand">by {{ item.brand }}</p>
+      </div>
+
+      <div class="badges">
+        <span class="badge">{{ item.size }}</span>
+        <span class="badge color-badge">{{ item.color }}</span>
+        {% if item.category_id %}
+          <span class="badge" style="background:#d1fae5;color:#065f46;">Category {{ item.category_id }}</span>
+        {% endif %}
+      </div>
+
+      <div class="price-block">
+        <div class="price">${{ item.price }}</div>
+        {% if item.stock == 0 %}
+          <div class="stock-info out">Out of stock</div>
+        {% elif item.stock < 5 %}
+          <div class="stock-info low">Only {{ item.stock }} left in stock</div>
+        {% else %}
+          <div class="stock-info ok">In stock: {{ item.stock }} units</div>
+        {% endif %}
+      </div>
+
+      <div class="meta">
+        <div class="meta-item">
+          <div class="label">Item ID</div>
+          <div class="value">#{{ item.id }}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Brand</div>
+          <div class="value">{{ item.brand }}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Size</div>
+          <div class="value">{{ item.size }}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Color</div>
+          <div class="value">{{ item.color }}</div>
+        </div>
+        {% if item.created_at %}
+        <div class="meta-item">
+          <div class="label">Added</div>
+          <div class="value">{{ item.created_at|slice:":10" }}</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="actions">
+        <a href="/clothes/" class="btn btn-secondary">← Back to Clothes</a>
+        {% if current_identity.role == "staff" %}
+          <a href="/staff/edit-clothing/{{ item.id }}/" class="btn btn-primary">Edit Item</a>
+        {% endif %}
+        {% if current_identity.role == "customer" %}
+          {% if item.stock > 0 %}
+            <form method="post" action="/add-clothing-to-cart/" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="clothing_item_id" value="{{ item.id }}">
+              <div style="display:inline-flex;align-items:center;gap:8px;margin-top:0;">
+                <label for="qty" style="font-weight:700;font-size:.9rem;">Qty:</label>
+                <input type="number" id="qty" name="quantity" value="1" min="1" max="{{ item.stock }}" style="width:60px;padding:6px;border-radius:8px;border:1px solid #d1d5db;font-size:.9rem;">
+                <button type="submit" style="background:#0f766e;color:#fff;border:none;padding:9px 20px;border-radius:10px;font-size:.95rem;font-weight:800;cursor:pointer;">Add to Cart</button>
+              </div>
+            </form>
+          {% else %}
+            <span style="color:#b91c1c;font-weight:800;font-size:1rem;">Out of stock</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card" style="text-align:center; padding: 48px;">
+      <p style="color: var(--muted); font-size: 1.1rem;">Clothing item not found.</p>
+      <a href="/clothes/" class="btn btn-secondary">← Back to Clothes</a>
+    </div>
+  {% endif %}
+</div>
+</body>
+</html>

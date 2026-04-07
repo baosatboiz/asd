@@ -87,6 +87,7 @@
   <div class="shell">
   <nav>
     <a href="/">Catalog</a>
+    <a href="/ai-assistant/">AI Assistant</a>
     <a href="/cart/">My Cart</a>
     {% if current_identity.role == "staff" %}
       <a href="/staff/dashboard/">Dashboard</a>
@@ -117,6 +118,7 @@
     {% endif %}
 
     {% if is_customer and items %}
+      <h2 style="margin-top: 20px; font-size: 1.1rem;">Books</h2>
       <table>
         <thead>
           <tr>
@@ -137,14 +139,46 @@
           {% endfor %}
         </tbody>
       </table>
+    {% elif is_customer and not items and not clothing_items %}
+      <p class="hint">Your cart is empty. Add books or clothes to continue.</p>
+    {% endif %}
 
+    {% if is_customer and clothing_items %}
+      <h2 style="margin-top: 20px; font-size: 1.1rem;">Clothing</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Brand</th>
+            <th>Size</th>
+            <th>Color</th>
+            <th>Price</th>
+            <th>Quantity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in clothing_items %}
+            <tr>
+              <td><a href="/clothes/{{ item.clothing_item_id }}/">{{ item.name }}</a></td>
+              <td>{{ item.brand }}</td>
+              <td>{{ item.size }}</td>
+              <td>{{ item.color }}</td>
+              <td class="price">${{ item.price }}</td>
+              <td>{{ item.quantity }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    {% if is_customer and items or is_customer and clothing_items %}
       <form method="post" action="/checkout/">
         {% csrf_token %}
         <button type="submit">Place Order Securely</button>
       </form>
-    {% elif is_customer %}
-      <p class="hint">Your cart is empty. Add books from the catalog to continue.</p>
-    {% else %}
+    {% endif %}
+
+    {% if not is_customer %}
       <p class="hint">Switch to a Customer identity to access cart management.</p>
     {% endif %}
   </div>

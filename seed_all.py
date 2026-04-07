@@ -1,6 +1,7 @@
 import json
 import random
 import sys
+import time
 from decimal import Decimal
 
 import requests
@@ -17,10 +18,24 @@ BASE_URLS = {
     "pay": "http://localhost:8008",
     "comment_rate": "http://localhost:8009",
     "recommender": "http://localhost:8010",
+    "clothes": "http://localhost:8012",
     "api_gateway": "http://localhost:8011",
 }
 
 TIMEOUT = 10
+MAX_RETRIES = 3
+
+
+CLOTHES_SAMPLES = [
+    {"name": "Classic White Tee", "brand": "Basics Co.", "size": "S", "color": "White", "price": "19.99", "stock": 50},
+    {"name": "Classic White Tee", "brand": "Basics Co.", "size": "M", "color": "White", "price": "19.99", "stock": 40},
+    {"name": "Slim Fit Jeans", "brand": "DenimLab", "size": "L", "color": "Blue", "price": "59.99", "stock": 20},
+    {"name": "Floral Summer Dress", "brand": "SunWear", "size": "M", "color": "Pink", "price": "45.00", "stock": 12},
+    {"name": "Wool Overcoat", "brand": "WinterEdge", "size": "XL", "color": "Charcoal", "price": "134.99", "stock": 5},
+    {"name": "Athletic Shorts", "brand": "SportZone", "size": "M", "color": "Black", "price": "24.99", "stock": 55},
+    {"name": "Linen Button Shirt", "brand": "UrbanWave", "size": "L", "color": "Beige", "price": "49.99", "stock": 18},
+    {"name": "Graphic Hoodie", "brand": "StreetCore", "size": "XXL", "color": "Red", "price": "57.99", "stock": 3},
+]
 
 
 def endpoint(service_key, path):
@@ -30,11 +45,17 @@ def endpoint(service_key, path):
 
 
 def request_api(method, url, payload=None):
-    try:
-        response = requests.request(method=method, url=url, json=payload, timeout=TIMEOUT)
-    except requests.RequestException as exc:
-        print(f"[FAIL] {method} {url} -> Request error: {exc}")
-        return None
+    response = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = requests.request(method=method, url=url, json=payload, timeout=TIMEOUT)
+            break
+        except requests.RequestException as exc:
+            if attempt >= MAX_RETRIES:
+                print(f"[FAIL] {method} {url} -> Request error: {exc}")
+                return None
+            print(f"[WARN] {method} {url} attempt {attempt}/{MAX_RETRIES} failed: {exc}")
+            time.sleep(1)
 
     ok = 200 <= response.status_code < 300
     label = "OK" if ok else "FAIL"
@@ -57,6 +78,37 @@ def request_api(method, url, payload=None):
     if not ok:
         return None
     return body
+
+
+def create_categories():
+    print("\n=== Step 0: Create sample categories (catalog-service:8003) ===")
+    categories = [
+        {"name": "Distributed Systems", "description": "Scalable systems and architecture"},
+        {"name": "Django & Python", "description": "Backend and web development"},
+        {"name": "API Engineering", "description": "REST API design and integration"},
+        {"name": "Cloud & DevOps", "description": "Cloud native patterns and deployment"},
+        {"name": "Data Modeling", "description": "Data and database fundamentals"},
+    ]
+
+    created = []
+    url = endpoint("catalog", "categories")
+    for item in categories:
+        result = request_api("POST", url, item)
+        if isinstance(result, dict) and result.get("id"):
+            created.append(result)
+
+    print(f"Created {len(created)} categories.")
+    return ensure_existing_records("catalog", "categories", created, "categories")
+
+
+def ensure_existing_records(service_key, path, created_items, label):
+    if created_items:
+        return created_items
+    existing = request_api("GET", endpoint(service_key, path))
+    if isinstance(existing, list):
+        print(f"Using existing {label}: {len(existing)} records.")
+        return existing
+    return []
 
 
 def create_books():
@@ -112,7 +164,7 @@ def create_books():
             created.append(result)
 
     print(f"Created {len(created)} books.")
-    return created
+    return ensure_existing_records("book", "books", created, "books")
 
 
 def create_managers_and_staff():
@@ -174,7 +226,42 @@ def create_customers():
             created.append(result)
 
     print(f"Created {len(created)} customers.")
-    return created
+    return ensure_existing_records("customer", "customers", created, "customers")
+
+
+def create_clothes():
+    print("\n=== Step 6: Create sample clothes (8012) ===")
+    existing = request_api("GET", endpoint("clothes", "clothes"))
+    existing_keys = set()
+    if isinstance(existing, list):
+        for item in existing:
+            existing_keys.add(
+                (
+                    str(item.get("name", "")).strip().lower(),
+                    str(item.get("brand", "")).strip().lower(),
+                    str(item.get("size", "")).strip().upper(),
+                    str(item.get("color", "")).strip().lower(),
+                )
+            )
+
+    created = []
+    url = endpoint("clothes", "clothes")
+    for item in CLOTHES_SAMPLES:
+        key = (
+            str(item.get("name", "")).strip().lower(),
+            str(item.get("brand", "")).strip().lower(),
+            str(item.get("size", "")).strip().upper(),
+            str(item.get("color", "")).strip().lower(),
+        )
+        if key in existing_keys:
+            continue
+        result = request_api("POST", url, item)
+        if isinstance(result, dict) and result.get("id"):
+            created.append(result)
+            existing_keys.add(key)
+
+    print(f"Created {len(created)} clothes items.")
+    return ensure_existing_records("clothes", "clothes", created, "clothes")
 
 
 def get_or_find_cart_id(customer_obj):
@@ -193,6 +280,11 @@ def get_or_find_cart_id(customer_obj):
     for cart in carts:
         if cart.get("customer_id") == customer_id:
             return cart.get("id")
+
+    created_cart = request_api("POST", endpoint("cart", "carts"), {"customer_id": customer_id})
+    if isinstance(created_cart, dict) and created_cart.get("id"):
+        return created_cart.get("id")
+
     return None
 
 
@@ -256,14 +348,32 @@ def verify_payments_and_shipments():
     print(f"Verification summary: payments={pay_count}, shipments={ship_count}")
 
 
+def verify_clothes():
+    print("\n=== Verification: Clothes (8012) ===")
+    clothes = request_api("GET", endpoint("clothes", "clothes"))
+    clothes_count = len(clothes) if isinstance(clothes, list) else 0
+    print(f"Verification summary: clothes={clothes_count}")
+
+
+def verify_categories():
+    print("\n=== Verification: Categories (8003) ===")
+    categories = request_api("GET", endpoint("catalog", "categories"))
+    category_count = len(categories) if isinstance(categories, list) else 0
+    print(f"Verification summary: categories={category_count}")
+
+
 def main():
     print("Starting seed_all.py ...")
+    create_categories()
     books = create_books()
     create_managers_and_staff()
     customers = create_customers()
     add_items_to_carts(customers, books)
     create_orders(customers, books)
+    create_clothes()
+    verify_categories()
     verify_payments_and_shipments()
+    verify_clothes()
     print("\nSeeding completed.")
 
 

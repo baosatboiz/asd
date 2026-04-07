@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+numpy
+scikit-learn
+joblib
+langchain
+langchain-community
+langchain-openai
+faiss-cpu

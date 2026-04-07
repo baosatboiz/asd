@@ -85,6 +85,25 @@
       font-size: 2rem;
     }
     .sub { margin-top: 8px; opacity: .9; }
+    .hero-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .hero-btn {
+      display: inline-block;
+      padding: 9px 13px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: .92rem;
+      border: 1px solid rgba(255,255,255,.45);
+      color: #fff;
+      background: rgba(255,255,255,.12);
+    }
+    .hero-btn:hover { background: rgba(255,255,255,.22); }
+    .hero-btn.light {
+      color: #0f4f4a;
+      border-color: transparent;
+      background: #dff8f4;
+    }
+    .hero-btn.light:hover { background: #c8f1ea; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     .card {
       background: var(--panel);
@@ -156,6 +175,8 @@
   <div class="shell">
   <nav>
     <a href="/">Catalog</a>
+    <a href="/clothes/">Clothes</a>
+    <a href="/ai-assistant/">AI Assistant</a>
     <a href="/cart/">My Cart</a>
     {% if current_identity.role == "staff" %}
       <a href="/staff/dashboard/">Dashboard</a>
@@ -178,6 +199,10 @@
   <section class="hero">
     <h1>BookStore Catalog</h1>
     <div class="sub">Browse by category, discover recommendations, and place orders in one flow.</div>
+    <div class="hero-actions">
+      <a class="hero-btn" href="/ai-assistant/?question=Toi+muon+goi+y+sach+phu+hop+ngan+sach">Ask AI for suggestions</a>
+      <a class="hero-btn light" href="/ai-assistant/">Open AI Assistant</a>
+    </div>
   </section>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -208,6 +233,9 @@
           <li>No recommendations available.</li>
         {% endfor %}
       </ul>
+      <p class="tips" style="margin-top: 10px;">
+        Need personalized advice? <a class="link" href="/ai-assistant/?question=Toi+nen+mua+sach+nao+de+tiet+kiem+chi+phi">Ask AI Assistant</a>
+      </p>
     </div>
   </div>
 

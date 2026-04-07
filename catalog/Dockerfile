@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY . /app
 
-RUN pip install --no-cache-dir django djangorestframework requests
+RUN pip install --no-cache-dir django djangorestframework requests psycopg2-binary
 
 EXPOSE 8000
 

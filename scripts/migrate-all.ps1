@@ -10,6 +10,7 @@ $services = @(
   "pay",
   "comment-rate",
   "recommender-ai",
+  "clothes",
   "api-gateway"
 )
 

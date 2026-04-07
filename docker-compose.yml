@@ -1,6 +1,23 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: bookstore
+      POSTGRES_PASSWORD: bookstore123
+      POSTGRES_DB: bookstore
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookstore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   staff:
     build: ./staff
     container_name: staff-service
@@ -8,6 +25,15 @@ services:
       - "8000:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   manager:
     build: ./manager
@@ -16,6 +42,15 @@ services:
       - "8001:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   customer:
     build: ./customer
@@ -25,6 +60,15 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - CART_SERVICE_URL=http://cart:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   catalog:
     build: ./catalog
@@ -33,6 +77,15 @@ services:
       - "8003:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   book:
     build: ./book
@@ -41,6 +94,15 @@ services:
       - "8004:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   cart:
     build: ./cart
@@ -50,6 +112,16 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - BOOK_SERVICE_URL=http://book:8000
+      - CLOTHES_SERVICE_URL=http://clothes:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   order:
     build: ./order
@@ -60,6 +132,16 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings
       - PAY_SERVICE_URL=http://pay:8000
       - SHIP_SERVICE_URL=http://ship:8000
+      - AI_SERVICE_URL=http://ai-service:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   ship:
     build: ./ship
@@ -68,6 +150,15 @@ services:
       - "8007:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   pay:
     build: ./pay
@@ -76,6 +167,15 @@ services:
       - "8008:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   comment-rate:
     build: ./comment-rate
@@ -85,6 +185,15 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - ORDER_SERVICE_URL=http://order:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   recommender-ai:
     build: ./recommender-ai
@@ -95,6 +204,41 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings
       - ORDER_SERVICE_URL=http://order:8000
       - COMMENT_RATE_SERVICE_URL=http://comment-rate:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai-service:
+    build: ./ai-service
+    container_name: ai-service
+    ports:
+      - "8013:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+
+  clothes:
+    build: ./clothes
+    container_name: clothes-service
+    ports:
+      - "8012:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api-gateway:
     build: ./api-gateway
@@ -103,8 +247,11 @@ services:
       - "8011:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
+      - STAFF_SERVICE_URL=http://staff:8000
+      - MANAGER_SERVICE_URL=http://manager:8000
       - CATALOG_SERVICE_URL=http://catalog:8000
       - BOOK_SERVICE_URL=http://book:8000
+      - CLOTHES_SERVICE_URL=http://clothes:8000
       - RECOMMENDER_SERVICE_URL=http://recommender-ai:8000
       - COMMENT_RATE_SERVICE_URL=http://comment-rate:8000
       - CUSTOMER_SERVICE_URL=http://customer:8000
@@ -112,3 +259,15 @@ services:
       - ORDER_SERVICE_URL=http://order:8000
       - PAY_SERVICE_URL=http://pay:8000
       - SHIP_SERVICE_URL=http://ship:8000
+      - DB_ENGINE=postgresql
+      - DB_NAME=bookstore
+      - DB_USER=bookstore
+      - DB_PASSWORD=bookstore123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

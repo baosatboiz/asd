@@ -412,15 +412,57 @@ class AddToCartView(APIView):
         return redirect("/cart/")
 
 
+class AddClothingToCartView(APIView):
+    def post(self, request):
+        cart_service = os.getenv("CART_SERVICE_URL", "http://cart:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        if not _require_customer(identity):
+            return redirect("/clothes/?error=Select+a+Customer+identity+to+add+items+to+cart")
+
+        clothing_item_id = request.data.get("clothing_item_id") or request.POST.get("clothing_item_id")
+        quantity = request.data.get("quantity") or request.POST.get("quantity", 1)
+        customer_id = int(identity["user_id"])
+
+        try:
+            clothing_item_id = int(clothing_item_id)
+            quantity = int(quantity)
+        except (TypeError, ValueError):
+            return redirect("/clothes/?error=clothing_item_id+and+quantity+must+be+valid+integers")
+
+        cart = _find_customer_cart(customer_id, cart_service, headers=headers)
+        if not cart:
+            cart, err = _safe_post(f"{cart_service}/carts/", {"customer_id": customer_id}, headers=headers)
+            if err or not cart:
+                return redirect("/clothes/?error=Unable+to+create+customer+cart")
+
+        cart_id = cart.get("id")
+        if not cart_id:
+            return redirect("/clothes/?error=Cart+response+missing+cart_id")
+
+        _, err = _safe_post(
+            f"{cart_service}/carts/{cart_id}/add-clothing/",
+            {"clothing_item_id": clothing_item_id, "quantity": quantity},
+            headers=headers,
+        )
+        if err:
+            return redirect(f"/clothes/?error=Failed+to+add+clothing+to+cart")
+
+        return redirect("/cart/")
+
+
 class CartView(APIView):
     def get(self, request):
         cart_service = os.getenv("CART_SERVICE_URL", "http://cart:8000")
         book_service = os.getenv("BOOK_SERVICE_URL", "http://book:8000")
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
         identity = _get_identity(request)
         headers = _actor_headers(identity)
         error = request.GET.get("error")
         cart = None
         detailed_items = []
+        detailed_clothing_items = []
         customer_id = None
 
         if not _require_customer(identity):
@@ -429,7 +471,7 @@ class CartView(APIView):
             customer_id = int(identity["user_id"])
             cart = _find_customer_cart(customer_id, cart_service, headers=headers)
             if not cart:
-                error = error or "No cart found for this customer. Add a book from Catalog first."
+                error = error or "No cart found for this customer. Add items from the catalog first."
 
         items = cart.get("items", []) if cart else []
         for item in items:
@@ -444,12 +486,29 @@ class CartView(APIView):
                 }
             )
 
+        clothing_items = cart.get("clothing_items", []) if cart else []
+        for item in clothing_items:
+            cid = item.get("clothing_item_id")
+            clothing_data = _safe_get(f"{clothes_service}/clothes/{cid}/", headers=headers, default={})
+            detailed_clothing_items.append(
+                {
+                    "clothing_item_id": cid,
+                    "quantity": item.get("quantity", 1),
+                    "name": clothing_data.get("name", "Unknown item"),
+                    "brand": clothing_data.get("brand", ""),
+                    "size": clothing_data.get("size", ""),
+                    "color": clothing_data.get("color", ""),
+                    "price": clothing_data.get("price", "0.00"),
+                }
+            )
+
         context = _base_context(identity)
         context.update(
             {
                 "customer_id": customer_id,
                 "cart": cart,
                 "items": detailed_items,
+                "clothing_items": detailed_clothing_items,
                 "error": error,
                 "is_customer": _require_customer(identity),
             }
@@ -461,6 +520,7 @@ class CheckoutView(APIView):
     def post(self, request):
         cart_service = os.getenv("CART_SERVICE_URL", "http://cart:8000")
         book_service = os.getenv("BOOK_SERVICE_URL", "http://book:8000")
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
         order_service = os.getenv("ORDER_SERVICE_URL", "http://order:8000")
         identity = _get_identity(request)
         headers = _actor_headers(identity)
@@ -473,13 +533,15 @@ class CheckoutView(APIView):
         if not cart:
             return redirect("/cart/?error=No+cart+found+for+customer")
 
-        items = cart.get("items", [])
-        if not items:
+        book_items = cart.get("items", [])
+        clothing_items = cart.get("clothing_items", [])
+
+        if not book_items and not clothing_items:
             return redirect("/cart/?error=Cart+is+empty")
 
         total_price = 0.0
         ordered_book_ids = []
-        for item in items:
+        for item in book_items:
             book_id = item.get("book_id")
             quantity = item.get("quantity", 1)
             book_data = _safe_get(f"{book_service}/books/{book_id}/", headers=headers, default={})
@@ -490,15 +552,34 @@ class CheckoutView(APIView):
                 except (TypeError, ValueError):
                     continue
 
-        if total_price <= 0 or not ordered_book_ids:
+        ordered_clothing_ids = []
+        for item in clothing_items:
+            cid = item.get("clothing_item_id")
+            quantity = item.get("quantity", 1)
+            clothing_data = _safe_get(f"{clothes_service}/clothes/{cid}/", headers=headers, default={})
+            if isinstance(clothing_data, dict) and clothing_data.get("price") is not None:
+                try:
+                    total_price += float(clothing_data["price"]) * int(quantity)
+                    ordered_clothing_ids.append(int(cid))
+                except (TypeError, ValueError):
+                    continue
+
+        if total_price <= 0:
             return redirect("/cart/?error=Unable+to+compute+order+total")
 
         unique_book_ids = sorted(set(ordered_book_ids))
+        unique_clothing_ids = sorted(set(ordered_clothing_ids))
         book_marker = ",".join(str(bid) for bid in unique_book_ids)
+        clothing_marker = ",".join(str(cid) for cid in unique_clothing_ids)
+        address_parts = [f"Customer {customer_id} default address"]
+        if book_marker:
+            address_parts.append(f"books:{book_marker}")
+        if clothing_marker:
+            address_parts.append(f"clothes:{clothing_marker}")
         order_payload = {
             "customer_id": customer_id,
             "total_price": f"{total_price:.2f}",
-            "shipping_address": f"Customer {customer_id} default address |books:{book_marker}",
+            "shipping_address": " |".join(address_parts),
         }
         order_data, err = _safe_post(f"{order_service}/orders/", order_payload, headers=headers)
         if err or not order_data:
@@ -578,6 +659,7 @@ class DashboardView(APIView):
         book_service = os.getenv("BOOK_SERVICE_URL", "http://book:8000")
         customer_service = os.getenv("CUSTOMER_SERVICE_URL", "http://customer:8000")
         staff_service = os.getenv("STAFF_SERVICE_URL", "http://staff:8000")
+        manager_service = os.getenv("MANAGER_SERVICE_URL", "http://manager:8000")
         pay_service = os.getenv("PAY_SERVICE_URL", "http://pay:8000")
 
         context = _base_context(identity)
@@ -590,6 +672,7 @@ class DashboardView(APIView):
                 "total_orders": 0,
                 "total_customers": 0,
                 "total_staff": 0,
+                "total_managers": 0,
                 "pending_orders": 0,
                 "avg_order_value": "0.00",
                 "low_stock_books": 0,
@@ -602,6 +685,7 @@ class DashboardView(APIView):
         books = _safe_get(f"{book_service}/books/", headers=headers)
         customers = _safe_get(f"{customer_service}/customers/", headers=headers)
         staff = _safe_get(f"{staff_service}/staffs/", headers=headers)
+        managers = _safe_get(f"{manager_service}/managers/", headers=headers)
         payments = _safe_get(f"{pay_service}/payments/", headers=headers)
 
         total_sales = 0.0
@@ -642,6 +726,7 @@ class DashboardView(APIView):
                 "total_orders": len(orders) if isinstance(orders, list) else 0,
                 "total_customers": len(customers) if isinstance(customers, list) else 0,
                 "total_staff": len(staff) if isinstance(staff, list) else 0,
+                "total_managers": len(managers) if isinstance(managers, list) else 0,
                 "pending_orders": pending_orders_count,
                 "avg_order_value": f"{avg_order_value:.2f}",
                 "low_stock_books": low_stock_books_count,
@@ -895,3 +980,303 @@ class AggregateApiView(APIView):
             "comments": _fetch_comments(comment_service, headers=headers),
         }
         return Response(data)
+
+class AIAssistantView(APIView):
+    def get(self, request):
+        identity = _get_identity(request)
+        question = (request.GET.get("question") or "").strip()
+
+        def _get_float(name, default):
+            raw = request.GET.get(name)
+            if raw in (None, ""):
+                return default
+            try:
+                return float(raw)
+            except ValueError:
+                return default
+
+        context = _base_context(identity)
+        context.update(
+            {
+                "question": question,
+                "clicks": _get_float("clicks", 20),
+                "add_to_cart": _get_float("add_to_cart", 4),
+                "total_spend": _get_float("total_spend", 120),
+                "session_duration": _get_float("session_duration", 900),
+                "behavior_analysis": None,
+                "chat_result": None,
+                "error": request.GET.get("error"),
+            }
+        )
+        return render(request, "ai_assistant.html", context)
+
+    def post(self, request):
+        ai_service = os.getenv("AI_SERVICE_URL", "http://ai-service:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        question = (request.POST.get("question") or "").strip()
+        clicks = request.POST.get("clicks", "0")
+        add_to_cart = request.POST.get("add_to_cart", "0")
+        total_spend = request.POST.get("total_spend", "0")
+        session_duration = request.POST.get("session_duration", "0")
+
+        try:
+            behavior_payload = {
+                "clicks": float(clicks),
+                "add_to_cart": float(add_to_cart),
+                "total_spend": float(total_spend),
+                "session_duration": float(session_duration),
+            }
+        except ValueError:
+            context = _base_context(identity)
+            context.update(
+                {
+                    "question": question,
+                    "clicks": clicks,
+                    "add_to_cart": add_to_cart,
+                    "total_spend": total_spend,
+                    "session_duration": session_duration,
+                    "behavior_analysis": None,
+                    "chat_result": None,
+                    "error": "Dữ liệu hành vi không hợp lệ. Vui lòng nhập số hợp lệ.",
+                }
+            )
+            return render(request, "ai_assistant.html", context)
+
+        behavior_analysis, behavior_err = _safe_post(
+            f"{ai_service}/analyze-behavior",
+            behavior_payload,
+            headers=headers,
+        )
+
+        chat_result = None
+        chat_err = None
+        if question:
+            chat_payload = {
+                "question": question,
+                "behavior": behavior_payload,
+                "top_k": 4,
+            }
+            chat_result, chat_err = _safe_post(
+                f"{ai_service}/chat-tu-van",
+                chat_payload,
+                headers=headers,
+            )
+
+        error = behavior_err or chat_err
+        context = _base_context(identity)
+        context.update(
+            {
+                "question": question,
+                "clicks": behavior_payload["clicks"],
+                "add_to_cart": behavior_payload["add_to_cart"],
+                "total_spend": behavior_payload["total_spend"],
+                "session_duration": behavior_payload["session_duration"],
+                "behavior_analysis": behavior_analysis,
+                "chat_result": chat_result,
+                "error": error,
+            }
+        )
+        return render(request, "ai_assistant.html", context)
+
+
+class ClothesView(APIView):
+    def get(self, request):
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        clothes = _safe_get(f"{clothes_service}/clothes/", headers=headers)
+
+        size_filter = request.GET.get("size")
+        color_filter = request.GET.get("color")
+
+        if isinstance(clothes, list):
+            if size_filter:
+                clothes = [c for c in clothes if c.get("size") == size_filter.upper()]
+            if color_filter:
+                clothes = [c for c in clothes if c.get("color", "").lower() == color_filter.lower()]
+
+        # Collect unique colors from the full list for filter bar
+        all_clothes = _safe_get(f"{clothes_service}/clothes/", headers=headers)
+        colors = sorted({c.get("color", "") for c in all_clothes if isinstance(all_clothes, list) and c.get("color")})
+
+        context = _base_context(identity)
+        context.update(
+            {
+                "clothes": clothes if isinstance(clothes, list) else [],
+                "selected_size": size_filter,
+                "selected_color": color_filter,
+                "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
+                "colors": colors,
+                "error": request.GET.get("error"),
+                "success": request.GET.get("success"),
+            }
+        )
+        return render(request, "clothes.html", context)
+
+
+class ClothesDetailView(APIView):
+    def get(self, request, item_id):
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        item = _safe_get(f"{clothes_service}/clothes/{item_id}/", headers=headers, default={})
+
+        context = _base_context(identity)
+        context.update({"item": item if isinstance(item, dict) else {}, "error": request.GET.get("error")})
+        return render(request, "clothes_detail.html", context)
+
+
+class ManageClothesView(APIView):
+    def get(self, request):
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        context = _base_context(identity)
+
+        if not _require_staff(identity):
+            context.update({"forbidden": True, "clothes": []})
+            return render(request, "manage_clothes.html", context, status=403)
+
+        clothes = _safe_get(f"{clothes_service}/clothes/", headers=headers)
+
+        context.update(
+            {
+                "forbidden": False,
+                "clothes": clothes if isinstance(clothes, list) else [],
+                "success": request.GET.get("success"),
+                "error": request.GET.get("error"),
+            }
+        )
+        return render(request, "manage_clothes.html", context)
+
+
+class AddClothingView(APIView):
+    def get(self, request):
+        identity = _get_identity(request)
+        context = _base_context(identity)
+
+        if not _require_staff(identity):
+            context.update({"forbidden": True})
+            return render(request, "add_edit_clothing.html", context, status=403)
+
+        context.update({"forbidden": False, "item": None, "is_edit": False, "sizes": ["XS", "S", "M", "L", "XL", "XXL"]})
+        return render(request, "add_edit_clothing.html", context)
+
+    def post(self, request):
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+
+        if not _require_staff(identity):
+            return redirect("/staff/manage-clothes/?error=Only+staff+can+add+clothing")
+
+        name = request.POST.get("name", "").strip()
+        brand = request.POST.get("brand", "").strip()
+        size = request.POST.get("size", "").strip()
+        color = request.POST.get("color", "").strip()
+        price = request.POST.get("price", "").strip()
+        stock = request.POST.get("stock", "0").strip()
+        category_id = request.POST.get("category_id", "").strip()
+
+        if not name or not brand or not size or not color or not price:
+            return redirect("/staff/add-clothing/?error=Name,+brand,+size,+color,+and+price+are+required")
+
+        try:
+            price = float(price)
+            stock = int(stock)
+            category_id = int(category_id) if category_id else None
+        except ValueError:
+            return redirect("/staff/add-clothing/?error=Price+must+be+a+number+and+stock+must+be+an+integer")
+
+        payload = {"name": name, "brand": brand, "size": size, "color": color, "price": f"{price:.2f}", "stock": stock}
+        if category_id:
+            payload["category_id"] = category_id
+
+        data, err = _safe_post(f"{clothes_service}/clothes/", payload, headers=headers)
+        if err:
+            return redirect(f"/staff/add-clothing/?error={quote_plus(err)}")
+
+        return redirect("/staff/manage-clothes/?success=Clothing+item+added+successfully")
+
+
+class EditClothingView(APIView):
+    def get(self, request, item_id):
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+
+        context = _base_context(identity)
+
+        if not _require_staff(identity):
+            context.update({"forbidden": True, "item": None})
+            return render(request, "add_edit_clothing.html", context, status=403)
+
+        item = _safe_get(f"{clothes_service}/clothes/{item_id}/", headers=headers, default={})
+
+        context.update(
+            {
+                "forbidden": False,
+                "item": item if isinstance(item, dict) else {},
+                "is_edit": True,
+                "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
+                "error": request.GET.get("error"),
+            }
+        )
+        return render(request, "add_edit_clothing.html", context)
+
+    def post(self, request, item_id):
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+
+        if not _require_staff(identity):
+            return redirect("/staff/manage-clothes/?error=Only+staff+can+edit+clothing")
+
+        name = request.POST.get("name", "").strip()
+        brand = request.POST.get("brand", "").strip()
+        size = request.POST.get("size", "").strip()
+        color = request.POST.get("color", "").strip()
+        price = request.POST.get("price", "").strip()
+        stock = request.POST.get("stock", "0").strip()
+        category_id = request.POST.get("category_id", "").strip()
+
+        if not name or not brand or not size or not color or not price:
+            return redirect(f"/staff/edit-clothing/{item_id}/?error=Name,+brand,+size,+color,+and+price+are+required")
+
+        try:
+            price = float(price)
+            stock = int(stock)
+            category_id = int(category_id) if category_id else None
+        except ValueError:
+            return redirect(f"/staff/edit-clothing/{item_id}/?error=Price+must+be+a+number+and+stock+must+be+an+integer")
+
+        payload = {"name": name, "brand": brand, "size": size, "color": color, "price": f"{price:.2f}", "stock": stock}
+        if category_id:
+            payload["category_id"] = category_id
+
+        data, err = _safe_patch(f"{clothes_service}/clothes/{item_id}/", payload, headers=headers)
+        if err:
+            return redirect(f"/staff/edit-clothing/{item_id}/?error={quote_plus(err)}")
+
+        return redirect("/staff/manage-clothes/?success=Clothing+item+updated+successfully")
+
+
+class DeleteClothingView(APIView):
+    def post(self, request, item_id):
+        identity = _get_identity(request)
+        headers = _actor_headers(identity)
+        clothes_service = os.getenv("CLOTHES_SERVICE_URL", "http://clothes:8000")
+
+        if not _require_staff(identity):
+            return redirect("/staff/manage-clothes/?error=Only+staff+can+delete+clothing")
+
+        success, err = _safe_delete(f"{clothes_service}/clothes/{item_id}/", headers=headers)
+        if not success:
+            return redirect(f"/staff/manage-clothes/?error={quote_plus(err)}")
+
+        return redirect("/staff/manage-clothes/?success=Clothing+item+deleted+successfully")

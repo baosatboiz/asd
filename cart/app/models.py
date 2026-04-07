@@ -15,3 +15,13 @@ class CartItem(models.Model):
 
     class Meta:
         unique_together = ("cart", "book_id")
+
+
+class ClothingCartItem(models.Model):
+    cart = models.ForeignKey(Cart, related_name="clothing_items", on_delete=models.CASCADE)
+    clothing_item_id = models.IntegerField()
+    quantity = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("cart", "clothing_item_id")

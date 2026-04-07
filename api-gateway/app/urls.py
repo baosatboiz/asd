@@ -1,17 +1,25 @@
 from django.urls import path
 
 from .views import (
+    AIAssistantView,
     AddBookView,
+    AddClothingToCartView,
+    AddClothingView,
     AddToCartView,
     AggregateApiView,
     BookDetailView,
     CartView,
     CheckoutView,
+    ClothesDetailView,
+    ClothesView,
     DeleteBookView,
+    DeleteClothingView,
     DashboardView,
     EditBookView,
+    EditClothingView,
     HomePageView,
     ManageBooksView,
+    ManageClothesView,
     MarkOrderShippedView,
     StaffDashboardView,
     SubmitReviewView,
@@ -20,10 +28,14 @@ from .views import (
 )
 
 urlpatterns = [
+    path("ai-assistant/", AIAssistantView.as_view(), name="gateway-ai-assistant"),
+    path("clothes/", ClothesView.as_view(), name="gateway-clothes"),
+    path("clothes/<int:item_id>/", ClothesDetailView.as_view(), name="gateway-clothes-detail"),
     path("", HomePageView.as_view(), name="gateway-home"),
     path("switch-identity/", SwitchIdentityView.as_view(), name="gateway-switch-identity"),
     path("books/<int:book_id>/", BookDetailView.as_view(), name="gateway-book-detail"),
     path("add-to-cart/", AddToCartView.as_view(), name="gateway-add-to-cart"),
+    path("add-clothing-to-cart/", AddClothingToCartView.as_view(), name="gateway-add-clothing-to-cart"),
     path("cart/", CartView.as_view(), name="gateway-cart"),
     path("checkout/", CheckoutView.as_view(), name="gateway-checkout"),
     path("success/", SuccessView.as_view(), name="gateway-success"),
@@ -35,5 +47,9 @@ urlpatterns = [
     path("staff/add-book/", AddBookView.as_view(), name="gateway-add-book"),
     path("staff/edit-book/<int:book_id>/", EditBookView.as_view(), name="gateway-edit-book"),
     path("staff/delete-book/<int:book_id>/", DeleteBookView.as_view(), name="gateway-delete-book"),
+    path("staff/manage-clothes/", ManageClothesView.as_view(), name="gateway-manage-clothes"),
+    path("staff/add-clothing/", AddClothingView.as_view(), name="gateway-add-clothing"),
+    path("staff/edit-clothing/<int:item_id>/", EditClothingView.as_view(), name="gateway-edit-clothing"),
+    path("staff/delete-clothing/<int:item_id>/", DeleteClothingView.as_view(), name="gateway-delete-clothing"),
     path("aggregate/", AggregateApiView.as_view(), name="gateway-aggregate"),
 ]

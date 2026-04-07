@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clothes Store – Gateway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1c2a2a;
+      --muted: #5f6f73;
+      --brand: #0f766e;
+      --brand-deep: #115e59;
+      --line: #d8e1df;
+      --accent: #f59e0b;
+      --danger: #b91c1c;
+      --shadow: 0 18px 40px rgba(17, 30, 30, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(70rem 35rem at -10% -20%, #d9efe7 0%, transparent 55%),
+        radial-gradient(55rem 28rem at 110% 0%, #fde7c2 0%, transparent 52%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .shell { max-width: 1160px; margin: 0 auto; animation: rise .4s ease-out; }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    nav {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 18px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    nav a { text-decoration: none; color: var(--ink); padding: 9px 12px; border-radius: 10px; font-weight: 700; }
+    nav a:hover, nav a.active { background: #ecf6f4; color: var(--brand-deep); }
+    .identity { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+    .identity select { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; color: var(--ink); }
+    .hero {
+      background: linear-gradient(130deg, #3730a3 0%, #6366f1 48%, #818cf8 100%);
+      color: #fff;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .hero h1 { margin: 0 0 6px; font-size: 1.8rem; }
+    .hero .sub { opacity: .85; font-size: .95rem; }
+    .error { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      align-items: center;
+    }
+    .filter-bar a {
+      padding: 7px 14px;
+      border-radius: 20px;
+      text-decoration: none;
+      font-size: .85rem;
+      font-weight: 700;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--ink);
+    }
+    .filter-bar a:hover, .filter-bar a.active {
+      background: #6366f1;
+      color: #fff;
+      border-color: #6366f1;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      transition: transform .15s, box-shadow .15s;
+    }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 24px 48px rgba(17,30,30,.12); }
+    .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+    .card .brand { color: var(--muted); font-size: .85rem; margin-bottom: 8px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: .78rem;
+      font-weight: 700;
+      background: #ede9fe;
+      color: #4f46e5;
+      margin-right: 4px;
+      margin-bottom: 8px;
+    }
+    .badge.color { background: #fef3c7; color: #92400e; }
+    .price { font-size: 1.2rem; font-weight: 800; color: var(--brand); margin: 8px 0 4px; }
+    .stock { font-size: .8rem; color: var(--muted); }
+    .stock.low { color: var(--danger); font-weight: 700; }
+    .card-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    a.view-btn { text-decoration: none; display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: .8rem; font-weight: 700; background: #6366f1; color: #fff; }
+    a.view-btn:hover { background: #4f46e5; }
+    a.edit-btn { text-decoration: none; display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: .8rem; font-weight: 700; background: #6c757d; color: #fff; }
+    a.edit-btn:hover { background: #5a6268; }
+    a.manage-btn { text-decoration: none; display: inline-block; padding: 8px 16px; border-radius: 10px; font-size: .85rem; font-weight: 800; background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+    a.manage-btn:hover { background: rgba(255,255,255,0.35); }
+    .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 1.1rem; }
+    .filter-section { margin-bottom: 8px; }
+    .filter-label { font-size: .78rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <nav>
+    <a href="/">Catalog</a>
+    <a href="/clothes/" class="active">Clothes</a>
+    <a href="/ai-assistant/">AI Assistant</a>
+    <a href="/cart/">My Cart</a>
+    {% if current_identity.role == "staff" %}
+      <a href="/staff/dashboard/">Dashboard</a>
+    {% else %}
+      <a href="/dashboard/">Dashboard</a>
+    {% endif %}
+    <form method="post" action="/switch-identity/" class="identity">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="identity_key">Switch User</label>
+      <select id="identity_key" name="identity_key" onchange="this.form.submit()">
+        {% for opt in identity_options %}
+          <option value="{{ opt.key }}" {% if current_identity.key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <span>Active: <strong>{{ current_identity.label }}</strong></span>
+  </nav>
+
+  <section class="hero">
+    <div>
+      <h1>Clothes Collection</h1>
+      <div class="sub">Browse our full clothing catalogue — filter by size or color.</div>
+    </div>
+    {% if current_identity.role == "staff" %}
+      <div><a href="/staff/manage-clothes/" class="manage-btn">⚙ Manage Clothes</a></div>
+    {% endif %}
+  </section>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="error" style="background:#d4edda;border-color:#c3e6cb;color:#155724;">{{ success }}</p>{% endif %}
+
+  <div class="filter-section">
+    <div class="filter-label">Filter by Size</div>
+    <div class="filter-bar">
+      <a href="/clothes/{% if selected_color %}?color={{ selected_color }}{% endif %}" {% if not selected_size %}class="active"{% endif %}>All Sizes</a>
+      {% for size in sizes %}
+        <a href="/clothes/?size={{ size }}{% if selected_color %}&color={{ selected_color }}{% endif %}" {% if selected_size == size %}class="active"{% endif %}>{{ size }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if colors %}
+  <div class="filter-section" style="margin-bottom: 18px;">
+    <div class="filter-label">Filter by Color</div>
+    <div class="filter-bar">
+      <a href="/clothes/{% if selected_size %}?size={{ selected_size }}{% endif %}" {% if not selected_color %}class="active"{% endif %}>All Colors</a>
+      {% for color in colors %}
+        <a href="/clothes/?color={{ color }}{% if selected_size %}&size={{ selected_size }}{% endif %}" {% if selected_color == color %}class="active"{% endif %}>{{ color }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if clothes %}
+    <div class="grid">
+      {% for item in clothes %}
+        <div class="card">
+          <h3>{{ item.name }}</h3>
+          <p class="brand">{{ item.brand }}</p>
+          <span class="badge">{{ item.size }}</span>
+          <span class="badge color">{{ item.color }}</span>
+          <div class="price">${{ item.price }}</div>
+          {% if item.stock == 0 %}
+            <div class="stock low">Out of stock</div>
+          {% elif item.stock < 5 %}
+            <div class="stock low">Only {{ item.stock }} left</div>
+          {% else %}
+            <div class="stock">In stock: {{ item.stock }}</div>
+          {% endif %}
+          <div class="card-actions">
+            <a href="/clothes/{{ item.id }}/" class="view-btn">View Details</a>
+            {% if current_identity.role == "staff" %}
+              <a href="/staff/edit-clothing/{{ item.id }}/" class="edit-btn">Edit</a>
+            {% endif %}
+            {% if current_identity.role == "customer" %}
+              {% if item.stock > 0 %}
+                <form method="post" action="/add-clothing-to-cart/" style="display:inline;">
+                  {% csrf_token %}
+                  <input type="hidden" name="clothing_item_id" value="{{ item.id }}">
+                  <input type="hidden" name="quantity" value="1">
+                  <button type="submit" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:8px;font-size:.8rem;font-weight:700;cursor:pointer;">+ Cart</button>
+                </form>
+              {% else %}
+                <span style="font-size:.78rem;color:#b91c1c;font-weight:700;">Out of stock</span>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No clothing items found{% if selected_size %} for size {{ selected_size }}{% endif %}.</div>
+  {% endif %}
+</div>
+</body>
+</html>
