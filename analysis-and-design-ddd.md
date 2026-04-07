@@ -18,8 +18,8 @@ Describe or diagram the high-level Business Process to be automated.
 
 - **Domain**: E-commerce
 - **Business Process**: Account onboarding, product catalog management, and checkout order orchestration
-- **Actors**: Guest user, registered user, admin, warehouse admin, identity service, product service, order service, inventory service, payment service, workflow worker, Camunda engine
-- **Scope**: User registration, email verification, login/logout, profile retrieval, product catalog CRUD (admin write, public read), order creation, inventory reserve/confirm/release, payment initiation and result correlation, and payment-result driven status transitions
+- **Actors**: Guest user, registered user, identity service, product service, order service, inventory service, payment service, workflow worker, Camunda engine
+- **Scope**: User registration, email verification, login/logout, profile retrieval, product catalog read (public), order creation, inventory reserve/confirm/release, payment initiation and result correlation, and payment-result driven status transitions
 
 **Process Diagram:**
 
@@ -43,19 +43,9 @@ flowchart TD
 
     subgraph CAT[Catalog Context]
         BR[Browse Product Catalog]
-        CP[Create Product]
-        UP[Update Product]
-        DP[Soft Delete Product]
     end
 
     LG --> BR
-    A[Admin] --> LG
-    A --> CP
-    A --> UP
-    A --> DP
-    CP --> BR
-    UP --> BR
-    DP --> BR
 
     BR --> CO[Create Order]
 
@@ -91,7 +81,7 @@ Current assignment baseline assumes no trusted legacy automation in production f
 | Requirement    | Description |
 |----------------|-------------|
 | Performance    | P95 read API latency under 300 ms for product listing at normal load |
-| Security       | JWT bearer auth, token invalidation on logout, protected admin endpoints |
+| Security       | JWT bearer auth, token invalidation on logout, and service-to-service protection for internal endpoints |
 | Scalability    | Product read traffic scales horizontally; identity and catalog services independently deployable |
 | Availability   | Core APIs target 99.9% service availability with graceful degradation for non-critical email verification delays |
 | Data Consistency | Checkout across order + inventory uses Saga orchestration with compensation (no distributed transaction) |
@@ -118,23 +108,20 @@ Format: past tense (e.g., "OrderPlaced", "PaymentReceived").
 | 7 | UserLoginRequested | Login | Credentials are submitted for authentication |
 | 8 | UserAuthenticated | Login | Access and refresh tokens are issued |
 | 9 | UserLoggedOut | Logout | Current token is invalidated/blacklisted |
-| 10 | ProductCreated | CreateProduct | Admin creates a new catalog item |
-| 11 | ProductUpdated | UpdateProduct | Admin modifies product details |
-| 12 | ProductSoftDeleted | DeleteProduct | Admin marks product as deleted |
-| 13 | ProductQueried | QueryProducts/QueryProductDetail | Public user requests product list/detail |
-| 14 | OrderCreated | CreateOrder | Customer submits order with item list |
-| 15 | CheckoutSagaStarted | StartCheckoutSaga | Process instance starts for distributed checkout workflow |
-| 16 | InventoryReserved | ReserveInventory | Requested quantities are moved to reserved stock |
-| 17 | InventoryReservationFailed | ReserveInventory | Reservation fails due to stock or conflict |
-| 18 | PaymentResultReceived | CorrelatePaymentResult | Payment success/failure signal is correlated to process |
-| 19 | InventoryConfirmed | ConfirmInventory | Reserved stock is confirmed as final stock-out |
-| 20 | InventoryReleased | ReleaseInventory | Reserved stock is returned to available stock |
-| 21 | OrderConfirmed | UpdateOrderStatus | Order transitions to confirmed |
-| 22 | OrderPaymentFailed | UpdateOrderStatus | Order transitions to payment_failed after compensation |
-| 23 | PaymentInitiated | InitiatePayment | Payment record is created in PENDING state |
-| 24 | PaymentSucceeded | MockResultCallback | Payment service receives successful payment callback |
-| 25 | PaymentFailed | MockResultCallback | Payment service receives failed payment callback |
-| 26 | PaymentCorrelated | CorrelatePaymentResult | Camunda receives message to continue saga |
+| 10 | ProductQueried | QueryProducts/QueryProductDetail | Public user requests product list/detail |
+| 11 | OrderCreated | CreateOrder | Customer submits order with item list |
+| 12 | CheckoutSagaStarted | StartCheckoutSaga | Process instance starts for distributed checkout workflow |
+| 13 | InventoryReserved | ReserveInventory | Requested quantities are moved to reserved stock |
+| 14 | InventoryReservationFailed | ReserveInventory | Reservation fails due to stock or conflict |
+| 15 | PaymentResultReceived | CorrelatePaymentResult | Payment success/failure signal is correlated to process |
+| 16 | InventoryConfirmed | ConfirmInventory | Reserved stock is confirmed as final stock-out |
+| 17 | InventoryReleased | ReleaseInventory | Reserved stock is returned to available stock |
+| 18 | OrderConfirmed | UpdateOrderStatus | Order transitions to confirmed |
+| 19 | OrderPaymentFailed | UpdateOrderStatus | Order transitions to payment_failed after compensation |
+| 20 | PaymentInitiated | InitiatePayment | Payment record is created in PENDING state |
+| 21 | PaymentSucceeded | MockResultCallback | Payment service receives successful payment callback |
+| 22 | PaymentFailed | MockResultCallback | Payment service receives failed payment callback |
+| 23 | PaymentCorrelated | CorrelatePaymentResult | Camunda receives message to continue saga |
 
 ### 2.2 Commands and Actors
 
@@ -148,9 +135,6 @@ What Commands trigger those Domain Events, and who issues them?
 | Login | User | UserLoginRequested, UserAuthenticated |
 | Logout | User | UserLoggedOut |
 | GetMyInfo | User | User profile read (query-side state access) |
-| CreateProduct | Admin | ProductCreated |
-| UpdateProduct | Admin | ProductUpdated |
-| DeleteProduct | Admin | ProductSoftDeleted |
 | QueryProducts | Guest user/User | ProductQueried |
 | QueryProductDetail | Guest user/User | ProductQueried |
 | CreateOrder | User | OrderCreated |
@@ -173,8 +157,8 @@ Group related Commands and Events around the business entities (Aggregates) they
 | UserAccount | RegisterAccount, VerifyEmail, Login, GetMyInfo | UserRegistered, UserActivated, UserAuthenticated | userId, username, email, passwordHash, status, roles |
 | VerificationToken | RegisterAccount, VerifyEmail | VerificationCodeGenerated, EmailVerified | tokenId, email, code, expiration, usedFlag |
 | SessionToken | Login, Logout | UserAuthenticated, UserLoggedOut | jti, subjectUserId, issueTime, expiryTime, blacklistStatus |
-| Product | CreateProduct, UpdateProduct, DeleteProduct | ProductCreated, ProductUpdated, ProductSoftDeleted | productId, name, description, price, stock, categoryId, images, isDeleted |
-| Category | CreateProduct, UpdateProduct, QueryProducts | CategoryReferenced | categoryId, categoryName |
+| Product | QueryProducts, QueryProductDetail | ProductQueried | productId, name, description, price, stock, categoryId, images, isDeleted |
+| Category | QueryProducts | CategoryReferenced | categoryId, categoryName |
 | Order | CreateOrder, UpdateOrderStatus, CancelOrder | OrderCreated, OrderConfirmed, OrderPaymentFailed | orderId, userId, status, totalAmount, createdAt, updatedAt |
 | OrderItem | CreateOrder | OrderCreated | orderId, productId, quantity, price |
 | OrderEvent | UpdateOrderStatus | OrderConfirmed, OrderPaymentFailed | eventId, orderId, eventType, description, createdAt |
@@ -190,7 +174,7 @@ Draw boundaries around Aggregates that belong to the same business context. Each
 | Bounded Context | Aggregates | Responsibility |
 |-----------------|------------|----------------|
 | Identity and Access Context | UserAccount, VerificationToken, SessionToken | User lifecycle, authentication, authorization boundary |
-| Catalog Context | Product, Category | Product information management and public/admin catalog operations |
+| Catalog Context | Product, Category | Product information management and public catalog queries |
 | Order Management Context | Order, OrderItem, OrderEvent | Checkout order lifecycle, status transitions, and order timeline |
 | Inventory Management Context | InventoryItem, InventoryReservation, InventoryHistory | Stock reservation and compensation-safe inventory mutations |
 | Payment Management Context | Payment | Payment record ownership, payment status tracking, and gateway/webhook bridge |
@@ -254,10 +238,9 @@ Full OpenAPI specs:
 | Endpoint | Method | Media Type | Response Codes |
 |----------|--------|------------|----------------|
 | /api/v1/products | GET | application/json | 200 |
-| /api/v1/products | POST | application/json | 201, 401, 403 |
 | /api/v1/products/{productId} | GET | application/json | 200, 404 |
-| /api/v1/products/{productId} | PUT | application/json | 200, 401, 403, 404 |
-| /api/v1/products/{productId} | DELETE | application/json | 200, 401, 403, 404 |
+
+Current assignment implementation scope excludes admin write endpoints (`POST/PUT/DELETE` for product management).
 
 **Order Service (Supplementary):**
 
@@ -284,6 +267,8 @@ Full OpenAPI specs:
 | /api/v1/inventory/confirm | POST | application/json | 200, 404, 409 |
 | /api/v1/inventory/release | POST | application/json | 200, 404, 409 |
 | /api/v1/inventory/reserved/{orderId} | GET | application/json | 200, 404 |
+
+Note: Privileged inventory administration operations are treated as supplementary design; current assignment focuses on checkout saga paths.
 
 **Payment Service (Supplementary):**
 
@@ -322,18 +307,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Receive product request] --> B{Public read or admin write?}
-    B -->|Public read| C[Fetch product list/detail]
-    B -->|Admin write| D[Validate JWT role and request body]
-    D -->|Invalid| E[Return 401 or 403 or 400]
-    D -->|Valid| F{Create/Update/Delete}
-    F -->|Create| G[Persist product]
-    F -->|Update| H[Update product fields]
-    F -->|Delete| I[Set isDeleted=true]
-    C --> J[Return ApiResponse]
-    G --> J
-    H --> J
-    I --> J
+    A[Receive product query request] --> B{Query type}
+    B -->|List| C[Fetch products with filters and pagination]
+    B -->|Detail| D[Fetch product by productId]
+    C --> E[Return ApiResponse]
+    D --> E
 ```
 
 **Order Service (Supplementary):**
