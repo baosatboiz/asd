@@ -19,21 +19,17 @@ Describe or diagram the high-level Business Process to be automated.
 - **Domain**: E-commerce
 - **Business Process**: Account onboarding, product catalog management, and checkout order orchestration
 - **Actors**: Guest user, registered user, identity service, product service, order service, inventory service, payment service, workflow worker, Camunda engine
-- **Scope**: User registration, email verification, login/logout, profile retrieval, product catalog read (public), order creation, inventory reserve/confirm/release, payment initiation and result correlation, and payment-result driven status transitions
+- **Scope**: User registration, login/logout, profile retrieval, product catalog read (public), order creation, inventory reserve/confirm/release, payment initiation and result correlation, and payment-result driven status transitions
 
 **Process Diagram:**
 
 ```mermaid
 flowchart TD
     G[Guest User] --> R[Register Account]
-    R --> VC[Generate Verification Code]
-    VC --> VE[Verify Email]
-    VE --> U[Registered User]
+    R --> U[Registered User]
 
     subgraph IAM[Identity and Access Context]
         R
-        VC
-        VE
         LG[Login and Issue JWT]
         LO[Logout and Blacklist Token]
     end
@@ -83,7 +79,7 @@ Current assignment baseline assumes no trusted legacy automation in production f
 | Performance    | P95 read API latency under 300 ms for product listing at normal load |
 | Security       | JWT bearer auth, token invalidation on logout, and service-to-service protection for internal endpoints |
 | Scalability    | Product read traffic scales horizontally; identity and catalog services independently deployable |
-| Availability   | Core APIs target 99.9% service availability with graceful degradation for non-critical email verification delays |
+| Availability   | Core APIs target 99.9% service availability with independent deployment and horizontal scaling |
 | Data Consistency | Checkout across order + inventory uses Saga orchestration with compensation (no distributed transaction) |
 | Idempotency | Reserve/confirm/release inventory operations must be idempotent via orderId key |
 | Async Payment Handling | Payment confirmation is asynchronous and must resume the saga through message correlation |
@@ -100,28 +96,24 @@ Format: past tense (e.g., "OrderPlaced", "PaymentReceived").
 | # | Domain Event | Triggered By | Description |
 |---|-------------|--------------|-------------|
 | 1 | UserRegistrationRequested | RegisterAccount | A guest submits username, password, and email |
-| 2 | UserRegistered | RegisterAccount | New user aggregate is created in PENDING state |
-| 3 | VerificationCodeGenerated | RegisterAccount | Verification token/code is generated |
-| 4 | VerificationEmailRequested | PublishVerificationMessage | Verification email is sent by Identity Service |
-| 5 | EmailVerified | VerifyEmail | User provides valid verification code |
-| 6 | UserActivated | VerifyEmail | Account state changes from PENDING to ACTIVE |
-| 7 | UserLoginRequested | Login | Credentials are submitted for authentication |
-| 8 | UserAuthenticated | Login | Access and refresh tokens are issued |
-| 9 | UserLoggedOut | Logout | Current token is invalidated/blacklisted |
-| 10 | ProductQueried | QueryProducts/QueryProductDetail | Public user requests product list/detail |
-| 11 | OrderCreated | CreateOrder | Customer submits order with item list |
-| 12 | CheckoutSagaStarted | StartCheckoutSaga | Process instance starts for distributed checkout workflow |
-| 13 | InventoryReserved | ReserveInventory | Requested quantities are moved to reserved stock |
-| 14 | InventoryReservationFailed | ReserveInventory | Reservation fails due to stock or conflict |
-| 15 | PaymentResultReceived | CorrelatePaymentResult | Payment success/failure signal is correlated to process |
-| 16 | InventoryConfirmed | ConfirmInventory | Reserved stock is confirmed as final stock-out |
-| 17 | InventoryReleased | ReleaseInventory | Reserved stock is returned to available stock |
-| 18 | OrderConfirmed | UpdateOrderStatus | Order transitions to confirmed |
-| 19 | OrderPaymentFailed | UpdateOrderStatus | Order transitions to payment_failed after compensation |
-| 20 | PaymentInitiated | InitiatePayment | Payment record is created in PENDING state |
-| 21 | PaymentSucceeded | MockResultCallback | Payment service receives successful payment callback |
-| 22 | PaymentFailed | MockResultCallback | Payment service receives failed payment callback |
-| 23 | PaymentCorrelated | CorrelatePaymentResult | Camunda receives message to continue saga |
+| 2 | UserRegistered | RegisterAccount | New user aggregate is created in ACTIVE state |
+| 3 | UserLoginRequested | Login | Credentials are submitted for authentication |
+| 4 | UserAuthenticated | Login | Access and refresh tokens are issued |
+| 5 | UserLoggedOut | Logout | Current token is invalidated/blacklisted |
+| 6 | ProductQueried | QueryProducts/QueryProductDetail | Public user requests product list/detail |
+| 7 | OrderCreated | CreateOrder | Customer submits order with item list |
+| 8 | CheckoutSagaStarted | StartCheckoutSaga | Process instance starts for distributed checkout workflow |
+| 9 | InventoryReserved | ReserveInventory | Requested quantities are moved to reserved stock |
+| 10 | InventoryReservationFailed | ReserveInventory | Reservation fails due to stock or conflict |
+| 11 | PaymentResultReceived | CorrelatePaymentResult | Payment success/failure signal is correlated to process |
+| 12 | InventoryConfirmed | ConfirmInventory | Reserved stock is confirmed as final stock-out |
+| 13 | InventoryReleased | ReleaseInventory | Reserved stock is returned to available stock |
+| 14 | OrderConfirmed | UpdateOrderStatus | Order transitions to confirmed |
+| 15 | OrderPaymentFailed | UpdateOrderStatus | Order transitions to payment_failed after compensation |
+| 16 | PaymentInitiated | InitiatePayment | Payment record is created in PENDING state |
+| 17 | PaymentSucceeded | MockResultCallback | Payment service receives successful payment callback |
+| 18 | PaymentFailed | MockResultCallback | Payment service receives failed payment callback |
+| 19 | PaymentCorrelated | CorrelatePaymentResult | Camunda receives message to continue saga |
 
 ### 2.2 Commands and Actors
 
@@ -129,9 +121,7 @@ What Commands trigger those Domain Events, and who issues them?
 
 | Command | Actor | Triggers Event(s) |
 |---------|-------|--------------------|
-| RegisterAccount | Guest user | UserRegistrationRequested, UserRegistered, VerificationCodeGenerated |
-| PublishVerificationMessage | Identity Service | VerificationEmailRequested |
-| VerifyEmail | Guest user | EmailVerified, UserActivated |
+| RegisterAccount | Guest user | UserRegistrationRequested, UserRegistered |
 | Login | User | UserLoginRequested, UserAuthenticated |
 | Logout | User | UserLoggedOut |
 | GetMyInfo | User | User profile read (query-side state access) |
@@ -154,8 +144,7 @@ Group related Commands and Events around the business entities (Aggregates) they
 
 | Aggregate | Commands | Domain Events | Owned Data |
 |-----------|----------|---------------|------------|
-| UserAccount | RegisterAccount, VerifyEmail, Login, GetMyInfo | UserRegistered, UserActivated, UserAuthenticated | userId, username, email, passwordHash, status, roles |
-| VerificationToken | RegisterAccount, VerifyEmail | VerificationCodeGenerated, EmailVerified | tokenId, email, code, expiration, usedFlag |
+| UserAccount | RegisterAccount, Login, GetMyInfo | UserRegistered, UserAuthenticated | userId, username, email, passwordHash, status, roles |
 | SessionToken | Login, Logout | UserAuthenticated, UserLoggedOut | jti, subjectUserId, issueTime, expiryTime, blacklistStatus |
 | Product | QueryProducts, QueryProductDetail | ProductQueried | productId, name, description, price, stock, categoryId, images, isDeleted |
 | Category | QueryProducts | CategoryReferenced | categoryId, categoryName |
@@ -173,7 +162,7 @@ Draw boundaries around Aggregates that belong to the same business context. Each
 
 | Bounded Context | Aggregates | Responsibility |
 |-----------------|------------|----------------|
-| Identity and Access Context | UserAccount, VerificationToken, SessionToken | User lifecycle, authentication, authorization boundary |
+| Identity and Access Context | UserAccount, SessionToken | User lifecycle, authentication, authorization boundary |
 | Catalog Context | Product, Category | Product information management and public catalog queries |
 | Order Management Context | Order, OrderItem, OrderEvent | Checkout order lifecycle, status transitions, and order timeline |
 | Inventory Management Context | InventoryItem, InventoryReservation, InventoryHistory | Stock reservation and compensation-safe inventory mutations |
@@ -228,7 +217,6 @@ Full OpenAPI specs:
 | Endpoint | Method | Media Type | Response Codes |
 |----------|--------|------------|----------------|
 | /api/v1/auth/register | POST | application/json | 201, 409 |
-| /api/v1/auth/verify-email | POST | application/json | 200, 401 |
 | /api/v1/auth/login | POST | application/json | 200, 401, 403 |
 | /api/v1/auth/logout | POST | application/json | 200, 401 |
 | /api/v1/users/my-info | GET | application/json | 200, 401 |
@@ -290,17 +278,14 @@ flowchart TD
     A[Receive auth request] --> B{Input valid?}
     B -->|No| C[Return 4xx with business code]
     B -->|Yes| D{Command type}
-    D -->|Register| E[Create PENDING user + verification token]
-    E --> F[Publish verification event/message]
-    D -->|Verify Email| G[Validate code and activate account]
-    D -->|Login| H[Authenticate and issue JWT tokens]
-    D -->|Logout| I[Blacklist token JTI]
-    D -->|My Info| J[Resolve user from token claims]
-    F --> K[Return ApiResponse]
-    G --> K
-    H --> K
-    I --> K
-    J --> K
+    D -->|Register| E[Create user with ACTIVE status]
+    D -->|Login| F[Authenticate and issue JWT tokens]
+    D -->|Logout| G[Blacklist token JTI]
+    D -->|My Info| H[Resolve user from token claims]
+    E --> I[Return ApiResponse]
+    F --> I
+    G --> I
+    H --> I
 ```
 
 **Product Service:**
