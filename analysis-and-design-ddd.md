@@ -25,13 +25,13 @@ Mô tả hoặc sơ đồ hóa business process cấp cao cần được tự đ
 
 ```mermaid
 flowchart TD
-    G[Guest User] --> R[Đăng ký tài khoản]
+    G[Guest User] --> R[Đăng ký]
     R --> U[Registered User]
 
     subgraph IAM[Identity & Access Context]
         R
-        LG[Đăng nhập và phát hành JWT]
-        LO[Đăng xuất và blacklist token]
+        LG[Đăng nhập<br/>phát hành JWT]
+        LO[Đăng xuất<br/>blacklist token]
     end
 
     U --> LG
@@ -46,14 +46,14 @@ flowchart TD
     BR --> CO[Tạo order]
 
     subgraph CHECKOUT[Checkout Saga Context]
-        SP[Khởi động Saga]
+        SP[Start Saga]
         RS[Reserve Inventory]
         PI[Initiate Payment]
-        PS[Nhận kết quả Payment]
-        GW{Payment thành công?}
+        PS[Payment Result]
+        GW{Payment OK?}
         CF[Confirm Inventory]
         RL[Release Inventory]
-        US[Cập nhật trạng thái Order]
+        US[Update Order Status]
     end
 
     CO --> SP --> RS --> PI --> PS --> GW
@@ -169,14 +169,14 @@ Thể hiện mối quan hệ giữa các Bounded Context.
 
 ```mermaid
 graph LR
-    IAM["Identity & Access"] -- "OHS + Published Language (JWT claims)" --> CATALOG["Catalog"]
-    CATALOG -- "Conformist to IAM auth contract" --> IAM
-    IAM -- "Token-based user identity" --> ORDERCTX["Order Management"]
-    ORDERCTX -- "Reserve-Confirm-Release (Customer/Supplier)" --> INV["Inventory Management"]
-    ORDERCTX -- "Initiate-Result (Customer/Supplier)" --> PAY["Payment Management"]
-    ORCH["Saga Orchestration"] -- "Orchestrates process tasks" --> ORDERCTX
-    ORCH -- "Orchestrates process tasks" --> INV
-    ORCH -- "Orchestrates process tasks" --> PAY
+    IAM["Identity & Access"] -- "JWT claims" --> CATALOG["Catalog"]
+    CATALOG -- "Conformist" --> IAM
+    IAM -- "User identity" --> ORDERCTX["Order Management"]
+    ORDERCTX -- "Reserve/Confirm/Release" --> INV["Inventory Management"]
+    ORDERCTX -- "Initiate/Result" --> PAY["Payment Management"]
+    ORCH["Saga Orchestration"] -- "Orchestrates" --> ORDERCTX
+    ORCH -- "Orchestrates" --> INV
+    ORCH -- "Orchestrates" --> PAY
 ```
 
 **Các kiểu quan hệ:** Upstream/Downstream, Customer/Supplier, Conformist, Anti-Corruption Layer (ACL), Shared Kernel, Open Host Service (OHS), Published Language.
@@ -263,13 +263,13 @@ Luồng xử lý nội bộ của từng service.
 
 ```mermaid
 flowchart TD
-    A[Nhận authentication request] --> B{Input hợp lệ?}
-    B -->|Không| C[Trả về 4xx với business error code]
-    B -->|Có| D{Loại command}
-    D -->|Register| E[Tạo user với trạng thái ACTIVE]
-    D -->|Login| F[Xác thực credential và phát hành JWT]
+    A[Auth request] --> B{Input hợp lệ?}
+    B -->|Không| C[Trả về 4xx]
+    B -->|Có| D{Command}
+    D -->|Register| E[Tạo user ACTIVE]
+    D -->|Login| F[Xác thực + phát hành JWT]
     D -->|Logout| G[Blacklist token JTI]
-    D -->|GetMyInfo| H[Resolve user từ token claims]
+    D -->|GetMyInfo| H[Resolve user từ claims]
     E --> I[Trả về ApiResponse]
     F --> I
     G --> I
@@ -280,8 +280,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Nhận product query request] --> B{Loại query}
-    B -->|Listing| C[Lấy danh sách product với filter và pagination]
+    A[Product query request] --> B{Loại query}
+    B -->|Listing| C[Lấy danh sách product<br/>filter + pagination]
     B -->|Detail| D[Lấy product theo productId]
     C --> E[Trả về ApiResponse]
     D --> E
@@ -291,18 +291,18 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Nhận request tạo order] --> B{Payload hợp lệ?}
+    A[Create order request] --> B{Payload hợp lệ?}
     B -->|Không| C[Trả về 4xx]
-    B -->|Có| D[Lưu order với status = PENDING]
-    D --> E[Khởi động Camunda Saga với businessKey = orderId]
+    B -->|Có| D[Lưu order status=PENDING]
+    D --> E[Start Camunda Saga<br/>businessKey=orderId]
     E --> F[Trả về 202 Accepted]
 
-    G[Nhận status update từ Saga] --> H{State transition hợp lệ?}
+    G[Saga status update] --> H{State transition hợp lệ?}
     H -->|Không| I[Trả về 404]
-    H -->|Có| J[Cập nhật order status và append order event]
+    H -->|Có| J[Update order status<br/>append order event]
     J --> K[Trả về order đã cập nhật]
 
-    L[Nhận compensation request] --> M[Chuyển order sang CANCELLED]
+    L[Compensation request] --> M[Chuyển order sang CANCELLED]
     M --> N[Trả về 200]
 ```
 
@@ -310,22 +310,22 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Nhận lệnh reserve / confirm / release] --> B{Có orderId?}
+    A[Reserve / Confirm / Release] --> B{Có orderId?}
     B -->|Không| C[Trả về 400]
     B -->|Có| D{Lookup orderId trong reservation table}
-    D -->|Đã xử lý trước đó| E[Trả về kết quả cũ - idempotent]
+    D -->|Đã xử lý| E[Trả kết quả cũ<br/>idempotent]
     D -->|Chưa có| F{Loại thao tác}
 
-    F -->|Reserve| G[Kiểm tra available stock với atomic update]
+    F -->|Reserve| G[Kiểm tra available stock<br/>atomic update]
     G -->|Không đủ| H[Trả về 409]
-    G -->|Đủ| I[Chuyển available stock sang reserved]
+    G -->|Đủ| I[Chuyển available sang reserved]
     I --> J[Ghi reservation record theo orderId]
 
     F -->|Confirm| K[Kiểm tra reservation ở trạng thái RESERVED]
     K --> L[Commit reservation thành xuất hàng]
 
     F -->|Release| M[Kiểm tra reservation ở trạng thái RESERVED]
-    M --> N[Hoàn trả reservation về available stock]
+    M --> N[Hoàn trả reservation về available]
 
     J --> O[Trả về kết quả]
     L --> O
@@ -346,21 +346,21 @@ sequenceDiagram
     participant P as Payment Service
     participant U as Webhook / Client
 
-    C->>W: Fetch External Task (initiate-payment)
-    W->>P: POST /api/v1/payments/initiate (orderId, amount)
-    P-->>W: 201 Created (Payment: PENDING)
-    W->>O: PATCH /internal/orders/{id}/status → WAITING_PAYMENT
+    C->>W: Fetch task (initiate-payment)
+    W->>P: POST /payments/initiate (orderId, amount)
+    P-->>W: 201 Created (PENDING)
+    W->>O: PATCH /orders/{id}/status -> WAITING_PAYMENT
     W->>C: Complete Task
-    Note over C,W: Camunda chờ tại Intermediate Message Catch Event (payment-result)
+    Note over C,W: Chờ message event payment-result
 
-    U->>P: POST /api/v1/payments/mock-result (orderId, isSuccess)
-    P->>P: DB Update — Payment status = SUCCESS / FAILED
+    U->>P: POST /payments/mock-result (orderId, isSuccess)
+    P->>P: DB Update: status = SUCCESS / FAILED
 
     alt Payment thành công
-        P->>C: POST /engine-rest/message (messageName: payment-result, var: PAYMENT_SUCCESS)
+        P->>C: POST /engine-rest/message (PAYMENT_SUCCESS)
     else Payment thất bại
-        P->>C: POST /engine-rest/message (messageName: payment-result, var: PAYMENT_FAILED)
+        P->>C: POST /engine-rest/message (PAYMENT_FAILED)
     end
-    C-->>P: 200 OK (correlation thành công)
+    C-->>P: 200 OK (correlated)
     P-->>U: 200 OK (PaymentResponse)
 ```
