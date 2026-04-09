@@ -63,14 +63,9 @@ flowchart TD
 
 ### 1.2 Các hệ thống hiện tại
 
-| Tên hệ thống | Loại | Vai trò hiện tại | Cách tích hợp |
+| Tên hệ thống | Loại | Vai trò hiện tại | Phương thức tương tác |
 |---|---|---|---|
-| Bảng tính + email thủ công | Quy trình thủ công | Lưu yêu cầu tài khoản và danh sách sản phẩm | Con người thao tác trực tiếp |
-| Social login provider (tùy chọn, tương lai) | External SaaS | Nguồn authentication tiềm năng | OAuth2/OIDC (đang lên kế hoạch) |
-| Payment gateway sandbox (mô phỏng) | External SaaS | Gửi kết quả payment success/failure cho checkout flow | REST callback / message correlation |
-| Payment gateway thực (tương lai) | External SaaS | Xử lý giao dịch thực tế | Webhook / REST callback |
-
-> Bài tập hiện tại giả định không có hệ thống legacy đáng tin cậy nào đang chạy trong production.
+| Không có | N/A | Quy trình hiện tại hoàn toàn chưa được tự động hóa. | N/A |
 
 ### 1.3 Non-Functional Requirements
 
@@ -208,9 +203,9 @@ Thiết kế service contract cho từng Bounded Context.
 Các OpenAPI specification đầy đủ:
 - [`docs/api-specs/identity-service.yaml`](api-specs/identity-service.yaml)
 - [`docs/api-specs/product-service.yaml`](api-specs/product-service.yaml)
-- [`docs/api-specs/order-service.yaml`] _(bổ sung)_
-- [`docs/api-specs/inventory-service.yaml`] _(bổ sung)_
-- [`docs/api-specs/payment-service.yaml`] _(bổ sung)_
+- `docs/api-specs/order-service.yaml` _(bổ sung)_
+- `docs/api-specs/inventory-service.yaml` _(bổ sung)_
+- `docs/api-specs/payment-service.yaml` _(bổ sung)_
 
 **Identity Service:**
 
@@ -234,29 +229,23 @@ Các OpenAPI specification đầy đủ:
 
 | Endpoint | Method | Media Type | Response Codes |
 |---|---|---|---|
-| /api/v1/orders | POST | application/json | 201, 400 |
+| /api/v1/orders | POST | application/json | 202, 400 |
 | /api/v1/orders/{orderId} | GET | application/json | 200, 404 |
 | /api/v1/orders/user/{userId} | GET | application/json | 200 |
 | /api/v1/orders/{orderId}/timeline | GET | application/json | 200, 404 |
-| /api/v1/orders/{orderId}/cancel | PUT | application/json | 200, 404, 409 |
-| /internal/orders/{orderId}/status | PATCH | application/json | 200, 404 |
+| /api/v1/orders/{orderId}/status | PATCH | application/json | 200, 404 |
+| /api/v1/orders/{orderId}/compensation | POST | application/json | 200, 404 |
 
 **Inventory Service _(bổ sung)_:**
 
 | Endpoint | Method | Media Type | Response Codes |
 |---|---|---|---|
 | /api/v1/inventory/{productId} | GET | application/json | 200, 404 |
-| /api/v1/inventory/{productId} | PUT | application/json | 200, 400 |
-| /api/v1/inventory | GET | application/json | 200 |
-| /api/v1/inventory/stock-in | POST | application/json | 200, 400 |
-| /api/v1/inventory/low-stock | GET | application/json | 200 |
-| /api/v1/inventory/history/{productId} | GET | application/json | 200 |
 | /api/v1/inventory/reserve | POST | application/json | 200, 409 |
-| /api/v1/inventory/confirm | POST | application/json | 200, 404, 409 |
-| /api/v1/inventory/release | POST | application/json | 200, 404, 409 |
-| /api/v1/inventory/reserved/{orderId} | GET | application/json | 200, 404 |
+| /api/v1/inventory/confirm | POST | application/json | 200, 404 |
+| /api/v1/inventory/release | POST | application/json | 200, 404 |
 
-> Các thao tác inventory management đặc quyền là phần thiết kế bổ sung; bài tập hiện tại tập trung vào checkout saga flow.
+> Bài tập hiện tại tập trung vào 4 endpoint phục vụ checkout saga flow. Các endpoint quản lý tồn kho đặc quyền (stock-in, low-stock, history) là phần thiết kế bổ sung ngoài phạm vi.
 
 **Payment Service _(bổ sung)_:**
 
@@ -306,38 +295,47 @@ flowchart TD
     A[Nhận request tạo order] --> B{Payload hợp lệ?}
     B -->|Không| C[Trả về 4xx]
     B -->|Có| D[Lưu order với status = PENDING]
-    D --> E[Khởi động Camunda process với businessKey = orderId]
-    E --> F[Trả về 201]
+    D --> E[Khởi động Camunda Saga với businessKey = orderId]
+    E --> F[Trả về 202 Accepted]
 
-    G[Nhận internal status update] --> H{State transition hợp lệ?}
-    H -->|Không| I[Trả về 409]
+    G[Nhận status update từ Saga] --> H{State transition hợp lệ?}
+    H -->|Không| I[Trả về 404]
     H -->|Có| J[Cập nhật order status và append order event]
     J --> K[Trả về order đã cập nhật]
+
+    L[Nhận compensation request] --> M[Chuyển order sang CANCELLED]
+    M --> N[Trả về 200]
 ```
 
 **Inventory Service _(bổ sung)_:**
 
 ```mermaid
 flowchart TD
-    A[Nhận lệnh reserve / confirm / release] --> B{Có Idempotency-Key?}
+    A[Nhận lệnh reserve / confirm / release] --> B{Có orderId?}
     B -->|Không| C[Trả về 400]
-    B -->|Có| D{Loại thao tác}
+    B -->|Có| D{Lookup orderId trong reservation table}
+    D -->|Đã xử lý trước đó| E[Trả về kết quả cũ - idempotent]
+    D -->|Chưa có| F{Loại thao tác}
 
-    D -->|Reserve| E[Kiểm tra stock với optimistic locking]
-    E -->|Không đủ| F[Trả về 409]
-    E -->|Đủ| G[Chuyển available stock sang reserved]
-    G --> H[Upsert reservation theo orderId]
+    F -->|Reserve| G[Kiểm tra available stock với atomic update]
+    G -->|Không đủ| H[Trả về 409]
+    G -->|Đủ| I[Chuyển available stock sang reserved]
+    I --> J[Ghi reservation record theo orderId]
 
-    D -->|Confirm| I[Kiểm tra reservation ở trạng thái RESERVED]
-    I --> J[Commit reservation thành xuất hàng]
+    F -->|Confirm| K[Kiểm tra reservation ở trạng thái RESERVED]
+    K --> L[Commit reservation thành xuất hàng]
 
-    D -->|Release| K[Kiểm tra reservation ở trạng thái RESERVED]
-    K --> L[Hoàn trả reservation về available stock]
+    F -->|Release| M[Kiểm tra reservation ở trạng thái RESERVED]
+    M --> N[Hoàn trả reservation về available stock]
 
-    H --> M[Ghi inventory history và trả về kết quả]
-    J --> M
-    L --> M
+    J --> O[Trả về kết quả]
+    L --> O
+    N --> O
 ```
+
+- Dùng **atomic update** để tránh race condition khi có nhiều request reserve đồng thời.
+- Tra cứu theo `orderId` trong bảng `inventory_reservation` để đảm bảo **idempotency**.
+- Stock không bao giờ được phép giảm xuống dưới 0.
 
 **Payment Service _(bổ sung)_:**
 
