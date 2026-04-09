@@ -208,9 +208,9 @@ Thiết kế service contract cho từng Bounded Context.
 Các OpenAPI specification đầy đủ:
 - [`docs/api-specs/identity-service.yaml`](api-specs/identity-service.yaml)
 - [`docs/api-specs/product-service.yaml`](api-specs/product-service.yaml)
-- `docs/api-specs/order-service.yaml` _(bổ sung)_
-- `docs/api-specs/inventory-service.yaml` _(bổ sung)_
-- `docs/api-specs/payment-service.yaml` _(bổ sung)_
+- [`docs/api-specs/order-service.yaml`] _(bổ sung)_
+- [`docs/api-specs/inventory-service.yaml`] _(bổ sung)_
+- [`docs/api-specs/payment-service.yaml`] _(bổ sung)_
 
 **Identity Service:**
 
