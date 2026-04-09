@@ -125,10 +125,9 @@ Command nào trigger các domain event đó, và ai là người phát ra chúng
 | CreateOrder | Registered user | OrderCreated |
 | StartCheckoutSaga | Order service | CheckoutSagaStarted |
 | ReserveInventory | Workflow worker | InventoryReserved hoặc InventoryReservationFailed |
-| CorrelatePaymentResult | Payment adapter / client | PaymentResultReceived |
+| CorrelatePaymentResult | Payment adapter / client, Payment service | PaymentResultReceived, PaymentCorrelated |
 | InitiatePayment | Workflow worker | PaymentInitiated |
 | MockPaymentResult | Webhook / client | PaymentSucceeded hoặc PaymentFailed |
-| CorrelatePaymentResult | Payment service | PaymentCorrelated |
 | ConfirmInventory | Workflow worker | InventoryConfirmed |
 | ReleaseInventory | Workflow worker | InventoryReleased |
 | UpdateOrderStatus | Workflow worker | OrderConfirmed, OrderPaymentFailed |
@@ -143,7 +142,7 @@ Nhóm các command và event liên quan quanh các business entity (aggregate) m
 | SessionToken | Login, Logout | UserAuthenticated, UserLoggedOut | jti, subjectUserId, issueTime, expiryTime, blacklistStatus |
 | Product | QueryProducts, QueryProductDetail | ProductQueried | productId, name, description, price, stock, categoryId, images, isDeleted |
 | Category | QueryProducts | CategoryReferenced | categoryId, categoryName |
-| Order | CreateOrder, UpdateOrderStatus, CancelOrder | OrderCreated, OrderConfirmed, OrderPaymentFailed | orderId, userId, status, totalAmount, createdAt, updatedAt |
+| Order | CreateOrder, UpdateOrderStatus | OrderCreated, OrderConfirmed, OrderPaymentFailed | orderId, userId, status, totalAmount, createdAt, updatedAt |
 | OrderItem | CreateOrder | OrderCreated | orderId, productId, quantity, price |
 | OrderEvent | UpdateOrderStatus | OrderConfirmed, OrderPaymentFailed | eventId, orderId, eventType, description, createdAt |
 | InventoryItem | ReserveInventory, ConfirmInventory, ReleaseInventory | InventoryReserved, InventoryConfirmed, InventoryReleased | productId, availableStock, reservedStock, version |
