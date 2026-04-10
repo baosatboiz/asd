@@ -17,9 +17,10 @@
 Mô tả hoặc sơ đồ hóa business process cấp cao cần được tự động hóa.
 
 - **Domain**: Thương mại điện tử
-- **Business Process**: Onboarding tài khoản, quản lý product catalog, và order-payment orchestration
+- **Business Process**: Đăng ký và xác thực tài khoản người dùng, 
+  truy vấn product catalog công khai và order-payment orchestration
 - **Các actor**: Guest user, registered user, authentication service, product service, order service, inventory service, payment service, workflow worker, Camunda engine
-- **Phạm vi**: Đăng ký người dùng; đăng nhập/đăng xuất; xem thông tin profile; duyệt product catalog công khai; tạo order; reserve/confirm/release inventory; khởi tạo payment và correlate kết quả; chuyển trạng thái order dựa trên kết quả payment
+- **Phạm vi**: Đăng ký người dùng; đăng nhập/đăng xuất; xem thông tin profile; truy vấn danh sách và chi tiết sản phẩm (read-only); tạo order; reserve/confirm/release inventory; khởi tạo payment và correlate kết quả; chuyển trạng thái order dựa trên kết quả payment
 
 **Process Diagram:**
 
@@ -49,16 +50,17 @@ flowchart TD
         SP[Start Saga]
         RS[Reserve Inventory]
         PI[Initiate Payment]
-        PS[Payment Result]
+        US_W[Update Order: WAITING_PAYMENT]
+        PS[Correlate Payment Result]
         GW{Payment OK?}
         CF[Confirm Inventory]
         RL[Release Inventory]
-        US[Update Order Status]
+        US_C[Update Order Status]
     end
 
-    CO --> SP --> RS --> PI --> PS --> GW
-    GW -->|Có| CF --> US
-    GW -->|Không / Timeout| RL --> US
+    CO --> SP --> RS --> PI --> US_W --> PS --> GW
+    GW -->|Có| CF --> US_C
+    GW -->|Không / Timeout| RL --> US_C
 ```
 
 ### 1.2 Các hệ thống hiện tại
@@ -103,12 +105,13 @@ Quy tắc đặt tên: dùng thì quá khứ (ví dụ: `OrderPlaced`, `PaymentR
 | 11 | PaymentResultReceived | CorrelatePaymentResult | Tín hiệu success/failure được correlate với process instance |
 | 12 | InventoryConfirmed | ConfirmInventory | Reserved inventory được confirm là xuất hàng chính thức |
 | 13 | InventoryReleased | ReleaseInventory | Reserved inventory được hoàn trả về available inventory |
-| 14 | OrderConfirmed | UpdateOrderStatus | Order chuyển sang trạng thái `confirmed` |
-| 15 | OrderPaymentFailed | UpdateOrderStatus | Order chuyển sang `payment_failed` sau compensating transaction |
+| 14 | OrderConfirmed | UpdateOrderStatus | Order chuyển sang trạng thái `CONFIRMED` |
+| 15 | OrderCancelled | UpdateOrderStatus | Order chuyển sang `CANCELLED` sau compensating transaction |
 | 16 | PaymentInitiated | InitiatePayment | Payment record được tạo với trạng thái PENDING |
-| 17 | PaymentSucceeded | MockResultCallback | Payment service nhận callback thành công |
-| 18 | PaymentFailed | MockResultCallback | Payment service nhận callback thất bại |
-| 19 | PaymentCorrelated | CorrelatePaymentResult | Camunda nhận message để tiếp tục saga |
+| 17 | PaymentSucceeded | MockPaymentResult | Payment service nhận callback thành công |
+| 18 | PaymentFailed | MockPaymentResult | Payment service nhận callback thất bại |
+| 19 | OrderWaitingPayment | UpdateOrderStatus | Order chuyển sang `WAITING_PAYMENT` |
+| 20 | OrderPaymentFailed | UpdateOrderStatus | Order chuyển sang `PAYMENT_FAILED` (trung gian) |
 
 ### 2.2 Commands và Actors
 
@@ -202,9 +205,9 @@ Thiết kế service contract cho từng Bounded Context.
 Các OpenAPI specification đầy đủ:
 - [`docs/api-specs/identity-service.yaml`](api-specs/identity-service.yaml)
 - [`docs/api-specs/product-service.yaml`](api-specs/product-service.yaml)
-- `docs/api-specs/order-service.yaml` _(bổ sung)_
-- `docs/api-specs/inventory-service.yaml` _(bổ sung)_
-- `docs/api-specs/payment-service.yaml` _(bổ sung)_
+- [`docs/api-specs/order-service.yaml`](api-specs/order-service.yaml)
+- [`docs/api-specs/inventory-service.yaml`](api-specs/inventory-service.yaml)
+- [`docs/api-specs/payment-service.yaml`](api-specs/payment-service.yaml)
 
 **Identity Service:**
 
@@ -222,38 +225,33 @@ Các OpenAPI specification đầy đủ:
 | /api/v1/products | GET | application/json | 200 |
 | /api/v1/products/{productId} | GET | application/json | 200, 404 |
 
-> Phạm vi bài tập hiện tại không bao gồm admin write endpoint (POST/PUT/DELETE cho product management).
 
-**Order Service _(bổ sung)_:**
+**Order Service :**
 
-| Endpoint | Method | Media Type | Response Codes |
-|---|---|---|---|
-| /api/v1/orders | POST | application/json | 202, 400 |
-| /api/v1/orders/{orderId} | GET | application/json | 200, 404 |
-| /api/v1/orders/user/{userId} | GET | application/json | 200 |
-| /api/v1/orders/{orderId}/timeline | GET | application/json | 200, 404 |
-| /api/v1/orders/{orderId}/status | PATCH | application/json | 200, 404 |
-| /api/v1/orders/{orderId}/compensation | POST | application/json | 200, 404 |
+| Endpoint | Method | Media Type | Response Codes | Description |
+|---|---|---|---|---|
+| `/api/v1/orders` | POST | application/json | 202, 400 | Khởi tạo đơn hàng & start Saga |
+| `/api/v1/orders/{id}` | GET | application/json | 200, 404 | Tra cứu thông tin đơn hàng |
+| `/api/v1/orders/{id}/status` | PATCH | application/json | 200, 404 | Cập nhật trạng thái (Camunda call) |
+| `/api/v1/orders/{id}/compensation` | POST | application/json | 200, 404 | Bồi hoàn/Hủy đơn |
+| `/api/v1/orders/user/{userId}` | GET | application/json | 200 | Lịch sử đơn của User |
 
-**Inventory Service _(bổ sung)_:**
+**Inventory Service :**
 
-| Endpoint | Method | Media Type | Response Codes |
-|---|---|---|---|
-| /api/v1/inventory/{productId} | GET | application/json | 200, 404 |
-| /api/v1/inventory/reserve | POST | application/json | 200, 409 |
-| /api/v1/inventory/confirm | POST | application/json | 200, 404 |
-| /api/v1/inventory/release | POST | application/json | 200, 404 |
+| Endpoint | Method | Media Type | Response Codes | Description |
+|---|---|---|---|---|
+| `/api/v1/inventory/{productId}` | GET | application/json | 200, 404 | Kiểm tra tồn kho |
+| `/api/v1/inventory/reserve` | POST | application/json | 200, 409 | Giữ hàng (header: Idempotency-Key) |
+| `/api/v1/inventory/confirm` | POST | application/json | 200, 404 | Xác nhận trừ kho |
+| `/api/v1/inventory/release` | POST | application/json | 200, 404 | Hoàn trả kho |
 
-> Bài tập hiện tại tập trung vào 4 endpoint phục vụ checkout saga flow. Các endpoint quản lý tồn kho đặc quyền (stock-in, low-stock, history) là phần thiết kế bổ sung ngoài phạm vi.
+**Payment Service :**
 
-**Payment Service _(bổ sung)_:**
-
-| Endpoint | Method | Media Type | Response Codes |
-|---|---|---|---|
-| /api/v1/payments/initiate | POST | application/json | 201, 400, 404, 409 |
-| /api/v1/payments/{paymentId} | GET | application/json | 200, 404 |
-| /api/v1/payments/order/{orderId} | GET | application/json | 200, 404 |
-| /api/v1/payments/mock-result | POST | application/json | 200, 400 |
+| Endpoint | Method | Media Type | Response Codes | Description |
+|---|---|---|---|---|
+| `/api/v1/payments/initiate` | POST | application/json | 201, 400 | Khởi tạo thanh toán |
+| `/api/v1/payments/mock-result` | POST | application/json | 200, 400 | Giả lập callback kết quả |
+| `/api/v1/payments/{paymentId}` | GET | application/json | 200, 404 | Tra cứu giao dịch |
 
 ### 3.2 Service Logic
 
@@ -287,7 +285,7 @@ flowchart TD
     D --> E
 ```
 
-**Order Service _(bổ sung)_:**
+**Order Service :**
 
 ```mermaid
 flowchart TD
@@ -306,7 +304,7 @@ flowchart TD
     M --> N[Trả về 200]
 ```
 
-**Inventory Service _(bổ sung)_:**
+**Inventory Service :**
 
 ```mermaid
 flowchart TD
@@ -319,48 +317,54 @@ flowchart TD
     F -->|Reserve| G[Kiểm tra available stock<br/>atomic update]
     G -->|Không đủ| H[Trả về 409]
     G -->|Đủ| I[Chuyển available sang reserved]
-    I --> J[Ghi reservation record theo orderId]
+    I --> J[Ghi reservation record & history<br/>status=RESERVED]
 
-    F -->|Confirm| K[Kiểm tra reservation ở trạng thái RESERVED]
-    K --> L[Commit reservation thành xuất hàng]
+    F -->|Confirm| K[Kiểm tra reservation status]
+    K --> L[Commit reservation: reserved -> 0<br/>history event: CONFIRM]
 
-    F -->|Release| M[Kiểm tra reservation ở trạng thái RESERVED]
-    M --> N[Hoàn trả reservation về available]
+    F -->|Release| M[Kiểm tra reservation status]
+    M --> N[Rollback: reserved -> available<br/>history event: RELEASE]
 
     J --> O[Trả về kết quả]
     L --> O
     N --> O
 ```
 
-- Dùng **atomic update** để tránh race condition khi có nhiều request reserve đồng thời.
-- Tra cứu theo `orderId` trong bảng `inventory_reservation` để đảm bảo **idempotency**.
+- Dùng **atomic update** (`available = available - qty`, `reserved = reserved + qty`) để tránh race condition.
+- Tra cứu theo `idempotencyKey` trong bảng `inventory_history` để đảm bảo **idempotency**.
 - Stock không bao giờ được phép giảm xuống dưới 0.
 
-**Payment Service _(bổ sung)_:**
+**Payment Service :**
 
 ```mermaid
 sequenceDiagram
-    participant C as Camunda Engine
-    participant W as Workflow Worker
+    participant U as User
     participant O as Order Service
+    participant C as Camunda Orchestrator
+    participant I as Inventory Service
     participant P as Payment Service
-    participant U as Webhook / Client
 
-    C->>W: Fetch task (initiate-payment)
-    W->>P: POST /payments/initiate (orderId, amount)
-    P-->>W: 201 Created (PENDING)
-    W->>O: PATCH /orders/{id}/status -> WAITING_PAYMENT
-    W->>C: Complete Task
-    Note over C,W: Chờ message event payment-result
+    U->>O: POST /api/v1/orders
+    O->>O: Lưu Order (PENDING)
+    O->>C: Start Process (orderId)
+    O-->>U: 202 Accepted
 
-    U->>P: POST /payments/mock-result (orderId, isSuccess)
-    P->>P: DB Update: status = SUCCESS / FAILED
+    C->>I: [Topic: reserve-inventory] POST /reserve
+    I-->>C: 200 OK
 
-    alt Payment thành công
-        P->>C: POST /engine-rest/message (PAYMENT_SUCCESS)
-    else Payment thất bại
-        P->>C: POST /engine-rest/message (PAYMENT_FAILED)
+    C->>P: [Topic: initiate-payment] POST /initiate
+    P-->>C: 201 Created
+
+    C->>O: [Topic: waiting-payment] PATCH /status -> WAITING_PAYMENT
+
+    Note over P,C: Trạng thái chờ Payment Callback
+    P->>C: Message Correlation (payment-message)
+
+    alt Payment Thành công
+        C->>I: [Topic: confirm-inventory] POST /confirm
+        C->>O: [Topic: confirm-order] PATCH /status -> CONFIRMED
+    else Payment Thất bại / Timeout
+        C->>I: [Topic: release-inventory] POST /release
+        C->>O: [Topic: cancel-order] PATCH /status -> CANCELLED
     end
-    C-->>P: 200 OK (correlated)
-    P-->>U: 200 OK (PaymentResponse)
 ```
