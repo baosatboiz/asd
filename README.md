@@ -1,3 +1,8 @@
+# Sequence Diagram: Chức năng Đăng ký (Register Flow)
+
+Dưới đây là Sequence Diagram mô tả luồng đăng ký thành công. Kịch bản được tinh gọn với các khối vuông tham gia giữ tên tiếng Anh theo sát codebase, và cơ sở dữ liệu được chi tiết hóa thành các bảng `users` và `patient_profiles`.
+
+```mermaid
 sequenceDiagram
     autonumber
     actor User as User
@@ -39,3 +44,4 @@ sequenceDiagram
     
     RegisterScreen->>RegisterScreen: Chuyển hướng tới trang Đăng nhập / Trang chủ
     RegisterScreen-->>User: Thông báo đăng ký thành công
+```
