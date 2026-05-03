@@ -1,6 +1,6 @@
 # Sequence Diagram: Chức năng Đăng ký (Register Flow)
 
-Dưới đây là Sequence Diagram mô tả luồng đăng ký thành công. Kịch bản được tinh gọn với các khối vuông tham gia giữ tên tiếng Anh theo sát codebase, và cơ sở dữ liệu được chi tiết hóa thành các bảng `users` và `patient_profiles`.
+Dưới đây là Sequence Diagram mô tả luồng đăng ký thành công. Kịch bản được tinh gọn với các khối vuông tham gia giữ tên tiếng Anh theo sát codebase, và cơ sở dữ liệu được chi tiết hóa thành các bảng `users` và `patient_profiles`. Do nguyên tắc hệ thống là đăng ký mặc định dành cho **Bệnh nhân**, mỗi tài khoản mới sẽ luôn đi kèm một bản ghi `PatientProfile`.
 
 ```mermaid
 sequenceDiagram
@@ -29,10 +29,10 @@ sequenceDiagram
     
     Note over AuthService,TablePatientProfile: Bắt đầu Transaction Database
     
-    AuthService->>TableUser: Lưu bản ghi User mới
+    AuthService->>TableUser: Lưu bản ghi User mới (role: patient)
     TableUser-->>AuthService: Trả về ID của User
     
-    AuthService->>TablePatientProfile: Lưu bản ghi PatientProfile (nếu role=patient)
+    AuthService->>TablePatientProfile: Lưu bản ghi PatientProfile tương ứng
     TablePatientProfile-->>AuthService: Lưu thành công
     
     Note over AuthService,TablePatientProfile: Kết thúc Transaction
