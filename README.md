@@ -1,42 +1,41 @@
-# Sequence Diagram: Chức năng Đăng nhập (Kịch bản chuẩn)
-
-Dưới đây là Sequence Diagram mô tả luồng đăng nhập thành công. Để sơ đồ tinh gọn hơn, toàn bộ logic gửi API ở phía Client (Mobile) đã được gộp chung vào khối `LoginScreen`. Khi đó khối `AuthService` sẽ chỉ còn đại diện duy nhất cho logic xử lý ở phía Backend.
-
-```mermaid
 sequenceDiagram
     autonumber
     actor User as User
-    participant LoginScreen as LoginScreen
+    participant RegisterScreen as RegisterScreen
     participant AuthStorage as AuthStorage
     participant AuthController as AuthController
     participant AuthService as AuthService
     participant TableUser as Table: users
-    participant TableRefreshToken as Table: refresh_tokens
+    participant TablePatientProfile as Table: patient_profiles
 
-    User->>LoginScreen: Nhập Email & Mật khẩu
-    User->>LoginScreen: Nhấn nút "Đăng nhập"
+    User->>RegisterScreen: Nhập thông tin (Tên, Email, SĐT, Mật khẩu)
+    User->>RegisterScreen: Nhấn nút "Đăng ký"
     
-    LoginScreen->>LoginScreen: Kiểm tra tính hợp lệ (Validation)
+    RegisterScreen->>RegisterScreen: Kiểm tra tính hợp lệ dữ liệu (Validation)
     
-    LoginScreen->>AuthController: Gửi request POST /auth/login
+    RegisterScreen->>AuthController: Gửi request POST /auth/register
     
-    AuthController->>AuthService: Gọi logic login(loginDto)
+    AuthController->>AuthService: Gọi logic register(registerDto)
     
-    AuthService->>TableUser: Lấy thông tin User bằng email
-    TableUser-->>AuthService: Trả về dữ liệu User (có mật khẩu băm)
+    AuthService->>TableUser: Kiểm tra trùng lặp Email hoặc SĐT (findFirst)
+    TableUser-->>AuthService: Trả về kết quả kiểm tra
     
-    AuthService->>AuthService: Đối chiếu mật khẩu mã hóa
-    AuthService->>AuthService: Generate Access & Refresh Tokens
+    AuthService->>AuthService: Băm mật khẩu (bcrypt.hash)
     
-    AuthService->>TableRefreshToken: Lưu bản ghi Refresh Token
-    TableRefreshToken-->>AuthService: Lưu thành công
+    Note over AuthService,TablePatientProfile: Bắt đầu Transaction Database
     
-    AuthService-->>AuthController: Trả về Tokens & thông tin User
-    AuthController-->>LoginScreen: HTTP 200 OK Response
+    AuthService->>TableUser: Lưu bản ghi User mới
+    TableUser-->>AuthService: Trả về ID của User
     
-    LoginScreen->>AuthStorage: Lưu Tokens: saveTokens()
-    LoginScreen->>AuthStorage: Lưu User: saveUser()
+    AuthService->>TablePatientProfile: Lưu bản ghi PatientProfile (nếu role=patient)
+    TablePatientProfile-->>AuthService: Lưu thành công
     
-    LoginScreen->>LoginScreen: Chuyển hướng context.go('/home')
-    LoginScreen-->>User: Hiển thị Màn hình Home
-```
+    Note over AuthService,TablePatientProfile: Kết thúc Transaction
+    
+    AuthService-->>AuthController: Trả về kết quả thành công và thông tin User
+    AuthController-->>RegisterScreen: HTTP 201 Created Response
+    
+    RegisterScreen->>AuthStorage: Lưu tạm thông tin User: saveUser()
+    
+    RegisterScreen->>RegisterScreen: Chuyển hướng tới trang Đăng nhập / Trang chủ
+    RegisterScreen-->>User: Thông báo đăng ký thành công
