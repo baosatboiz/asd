@@ -1,6 +1,8 @@
 # Sequence Diagram: Chức năng Đăng ký (Có xác thực Email)
 
-Dưới đây là sơ đồ Sequence chi tiết cho chức năng Đăng ký tài khoản có bổ sung **Luồng Xác thực Email (Email Verification)**. Tất cả các bước được vẽ nối tiếp nghiêm ngặt (Synchronous Request - Response) để đảm bảo tính liên tục của luồng thực thi.
+Dưới đây là sơ đồ Sequence chi tiết cho chức năng Đăng ký tài khoản có bổ sung **Luồng Xác thực Email (Email Verification)**. Tất cả các bước được vẽ nối tiếp nghiêm ngặt (Synchronous Request - Response) để đảm bảo tính liên tục của luồng thực thi. 
+
+*(Ghi chú: Lớp Service đã được gộp chung vào Controller theo yêu cầu của dự án)*
 
 ```mermaid
 sequenceDiagram
@@ -9,7 +11,6 @@ sequenceDiagram
     participant MobileApp as Register Screen
     participant VerifyScreen as Verify OTP Screen
     participant AuthCtrl as Auth Controller
-    participant AuthSvc as Auth Service
     participant MailSvc as Mailer Service
     participant DBUser as Table: users
     participant DBProfile as Table: patient_profiles
@@ -23,31 +24,29 @@ sequenceDiagram
     
     %% Gọi API Đăng ký
     MobileApp->>AuthCtrl: POST /auth/register (payload)
-    AuthCtrl->>AuthSvc: Gọi logic xử lý: register(dto)
     
-    %% Xử lý nghiệp vụ Backend
-    AuthSvc->>DBUser: SELECT findFirst (Kiểm tra trùng lặp Email hoặc SĐT)
-    DBUser-->>AuthSvc: Trả về kết quả (Null = Hợp lệ)
+    %% Xử lý nghiệp vụ Backend tại Controller
+    AuthCtrl->>DBUser: SELECT findFirst (Kiểm tra trùng lặp Email hoặc SĐT)
+    DBUser-->>AuthCtrl: Trả về kết quả (Null = Hợp lệ)
     
-    AuthSvc->>AuthSvc: Băm mật khẩu (bcrypt) & Tạo Mã xác thực (OTP)
+    AuthCtrl->>AuthCtrl: Băm mật khẩu (bcrypt) & Tạo Mã xác thực (OTP)
     
     %% Database Transaction
-    Note over AuthSvc,DBProfile: Bắt đầu Transaction tạo tài khoản
-    AuthSvc->>DBUser: INSERT bản ghi User (isEmailVerified: false, emailVerificationToken: OTP)
-    DBUser-->>AuthSvc: Trả về ID của User vừa tạo
+    Note over AuthCtrl,DBProfile: Bắt đầu Transaction tạo tài khoản
+    AuthCtrl->>DBUser: INSERT bản ghi User (isEmailVerified: false, emailVerificationToken: OTP)
+    DBUser-->>AuthCtrl: Trả về ID của User vừa tạo
     
-    AuthSvc->>DBProfile: INSERT bản ghi PatientProfile (is_primary: 1)
-    DBProfile-->>AuthSvc: Trả về kết quả tạo Profile
-    Note over AuthSvc,DBProfile: Kết thúc Transaction (Commit)
+    AuthCtrl->>DBProfile: INSERT bản ghi PatientProfile (is_primary: 1)
+    DBProfile-->>AuthCtrl: Trả về kết quả tạo Profile
+    Note over AuthCtrl,DBProfile: Kết thúc Transaction (Commit)
     
     %% Gửi Email
-    AuthSvc->>MailSvc: sendVerificationEmail(email, OTP)
-    MailSvc-->>AuthSvc: Xác nhận đã đẩy email vào hàng đợi
+    AuthCtrl->>MailSvc: sendVerificationEmail(email, OTP)
+    MailSvc-->>AuthCtrl: Xác nhận đã đẩy email vào hàng đợi
     MailSvc-)User: (Bất đồng bộ) Gửi Email thực tế đến hòm thư người dùng
     
     %% Phản hồi Đăng ký thành công (nhưng chưa verify)
-    AuthSvc-->>AuthCtrl: Trả kết quả (Thành công, yêu cầu xác thực)
-    AuthCtrl-->>MobileApp: HTTP 201 Created Response
+    AuthCtrl-->>MobileApp: HTTP 201 Created Response (Thành công, yêu cầu xác thực)
     
     %% 2. QUÁ TRÌNH XÁC THỰC EMAIL (VERIFY)
     MobileApp->>VerifyScreen: Điều hướng tự động sang màn hình Nhập OTP
@@ -57,17 +56,15 @@ sequenceDiagram
     User->>VerifyScreen: Nhấn nút "Xác nhận mã"
     
     VerifyScreen->>AuthCtrl: POST /auth/verify-email { token: OTP }
-    AuthCtrl->>AuthSvc: Gọi logic xử lý: verifyEmail(token)
     
-    %% Xử lý Verify Backend
-    AuthSvc->>DBUser: SELECT tìm User theo emailVerificationToken
-    DBUser-->>AuthSvc: Trả về bản ghi User tương ứng
+    %% Xử lý Verify Backend tại Controller
+    AuthCtrl->>DBUser: SELECT tìm User theo emailVerificationToken
+    DBUser-->>AuthCtrl: Trả về bản ghi User tương ứng
     
-    AuthSvc->>DBUser: UPDATE bản ghi User (isEmailVerified = true, emailVerificationToken = null)
-    DBUser-->>AuthSvc: Trả về kết quả Update thành công
+    AuthCtrl->>DBUser: UPDATE bản ghi User (isEmailVerified = true, emailVerificationToken = null)
+    DBUser-->>AuthCtrl: Trả về kết quả Update thành công
     
-    AuthSvc-->>AuthCtrl: Trả kết quả xác thực thành công
-    AuthCtrl-->>VerifyScreen: HTTP 200 OK
+    AuthCtrl-->>VerifyScreen: HTTP 200 OK (Xác thực thành công)
     
     %% Kết thúc và Đăng nhập
     VerifyScreen-->>User: Hiển thị thông báo "Xác thực tài khoản thành công"
