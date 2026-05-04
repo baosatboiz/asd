@@ -1,72 +1,59 @@
-# Sequence Diagram: Chức năng Đăng ký (Có xác thực Email)
+# Sequence Diagram: Chức năng Dự đoán Bệnh (AI Triage)
 
-Dưới đây là sơ đồ Sequence chi tiết cho chức năng Đăng ký tài khoản có bổ sung **Luồng Xác thực Email (Email Verification)**. Tất cả các bước được vẽ nối tiếp nghiêm ngặt (Synchronous Request - Response) để đảm bảo tính liên tục của luồng thực thi. 
-
-*(Ghi chú: Lớp Service đã được gộp chung vào Controller theo yêu cầu của dự án)*
+Dưới đây là Sequence Diagram chi tiết cho chức năng Trợ lý Y tế AI. Sơ đồ mô tả quy trình tổng hợp dữ liệu từ người dùng, gọi API hệ thống, tương tác với dịch vụ AI của Google (Gemini API) để phân tích, xử lý kết quả, lưu lịch sử vào Database và trả về giao diện.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as User
-    participant MobileApp as Register Screen
-    participant VerifyScreen as Verify OTP Screen
-    participant AuthCtrl as Auth Controller
-    participant MailSvc as Mailer Service
-    participant DBUser as Table: users
-    participant DBProfile as Table: patient_profiles
+    
+    participant AiScreen as AiTriageScreen
+    
+    participant AiCtrl as AiController
+    
+    participant AiSvc as AiService
+    
+    participant GeminiAPI as Google Gemini API
+    
+    participant DBTriage as Table: ai_triage_sessions
 
-    %% 1. QUÁ TRÌNH ĐĂNG KÝ CƠ BẢN
-    User->>MobileApp: Mở màn hình Đăng ký
-    User->>MobileApp: Điền thông tin (Tên, Email, SĐT, Mật khẩu)
-    User->>MobileApp: Nhấn nút "Đăng ký"
+    User->>AiScreen: Mở màn hình Trợ lý Y tế AI
+    User->>AiScreen: Chọn triệu chứng, vị trí, mức độ đau, thời gian...
+    User->>AiScreen: Nhập thêm chi tiết triệu chứng & Nhấn "Phân tích"
     
-    MobileApp->>MobileApp: Form Validation (Kiểm tra dữ liệu)
+    %% Xử lý tại Frontend
+    AiScreen->>AiScreen: Tổng hợp dữ liệu thành văn bản (Build Symptoms Payload)
+    AiScreen->>AiScreen: Kiểm tra tính hợp lệ (Validate input)
     
-    %% Gọi API Đăng ký
-    MobileApp->>AuthCtrl: POST /auth/register (payload)
+    %% Gọi API Backend
+    AiScreen->>AiCtrl: Gửi request POST /ai/triage { symptoms }
     
-    %% Xử lý nghiệp vụ Backend tại Controller
-    AuthCtrl->>DBUser: SELECT findFirst (Kiểm tra trùng lặp Email hoặc SĐT)
-    DBUser-->>AuthCtrl: Trả về kết quả (Null = Hợp lệ)
+    %% Chuyển qua Service
+    AiCtrl->>AiSvc: Gọi hàm triageSymptoms(userId, symptoms)
     
-    AuthCtrl->>AuthCtrl: Băm mật khẩu (bcrypt) & Tạo Mã xác thực (OTP)
+    %% Logic chuẩn bị gọi Gemini
+    AiSvc->>AiSvc: Kiểm tra GEMINI_API_KEY
+    AiSvc->>AiSvc: Xây dựng Prompt (System Prompt + User Symptoms)
     
-    %% Database Transaction
-    Note over AuthCtrl,DBProfile: Bắt đầu Transaction tạo tài khoản
-    AuthCtrl->>DBUser: INSERT bản ghi User (isEmailVerified: false, emailVerificationToken: OTP)
-    DBUser-->>AuthCtrl: Trả về ID của User vừa tạo
+    %% Gọi ra External API
+    Note over AiSvc,GeminiAPI: Quá trình AI suy luận (được giới hạn Timeout)
+    AiSvc->>GeminiAPI: Gọi model.generateContent() qua SDK
+    GeminiAPI-->>AiSvc: Trả về văn bản thô (Raw Text chứa Markdown JSON)
     
-    AuthCtrl->>DBProfile: INSERT bản ghi PatientProfile (is_primary: 1)
-    DBProfile-->>AuthCtrl: Trả về kết quả tạo Profile
-    Note over AuthCtrl,DBProfile: Kết thúc Transaction (Commit)
+    %% Xử lý kết quả AI
+    AiSvc->>AiSvc: Hàm parseAndValidateTriageJson()
+    Note right of AiSvc: Bóc tách markdown, Parse JSON, Validate cấu trúc<br>(urgency, specialty, reasoning)
     
-    %% Gửi Email
-    AuthCtrl->>MailSvc: sendVerificationEmail(email, OTP)
-    MailSvc-->>AuthCtrl: Xác nhận đã đẩy email vào hàng đợi
-    MailSvc-)User: (Bất đồng bộ) Gửi Email thực tế đến hòm thư người dùng
+    %% Lưu lịch sử
+    AiSvc->>DBTriage: INSERT bản ghi (Lưu lịch sử phiên Triage)
+    DBTriage-->>AiSvc: Lưu thành công
     
-    %% Phản hồi Đăng ký thành công (nhưng chưa verify)
-    AuthCtrl-->>MobileApp: HTTP 201 Created Response (Thành công, yêu cầu xác thực)
+    %% Trả kết quả
+    AiSvc-->>AiCtrl: Trả đối tượng TriageResultDto
+    AiCtrl-->>AiScreen: Phản hồi HTTP 200 OK (JSON)
     
-    %% 2. QUÁ TRÌNH XÁC THỰC EMAIL (VERIFY)
-    MobileApp->>VerifyScreen: Điều hướng tự động sang màn hình Nhập OTP
-    VerifyScreen-->>User: Hiển thị form nhập OTP
-    
-    User->>VerifyScreen: Mở Email, đọc mã OTP và điền vào form
-    User->>VerifyScreen: Nhấn nút "Xác nhận mã"
-    
-    VerifyScreen->>AuthCtrl: POST /auth/verify-email { token: OTP }
-    
-    %% Xử lý Verify Backend tại Controller
-    AuthCtrl->>DBUser: SELECT tìm User theo emailVerificationToken
-    DBUser-->>AuthCtrl: Trả về bản ghi User tương ứng
-    
-    AuthCtrl->>DBUser: UPDATE bản ghi User (isEmailVerified = true, emailVerificationToken = null)
-    DBUser-->>AuthCtrl: Trả về kết quả Update thành công
-    
-    AuthCtrl-->>VerifyScreen: HTTP 200 OK (Xác thực thành công)
-    
-    %% Kết thúc và Đăng nhập
-    VerifyScreen-->>User: Hiển thị thông báo "Xác thực tài khoản thành công"
-    VerifyScreen->>VerifyScreen: Điều hướng về màn hình Đăng nhập (Login)
+    %% Hiển thị và điều hướng
+    AiScreen-->>User: Hiển thị kết quả: Mức độ, Chuyên khoa, Giải thích
+    User->>AiScreen: Nhấn nút "Tìm Bác sĩ ngay"
+    AiScreen->>AiScreen: Điều hướng về màn hình Home (kèm bộ lọc chuyên khoa)
 ```
